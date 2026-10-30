@@ -1,3 +1,62 @@
+# Round 2: compact groups, drag and drop, exact tiles
+
+## Random churn, 2000 ops per policy, seeded (45% add, 40% remove, 15% drag to a random tile up to 4 steps out; 1..30 workspaces)
+policy | removals | avg moves/removal | max moves/removal | drags | avg moves/drag | max moves/drag | max radius | max excess | states with enclosed holes | states with gaps inside the radius | max center drift from tile 0 (99 = more than 6 steps)
+list | 853 | 10.67 | 29 | 276 | 1.18 | 2 | 2.613 | 0.000 | 0 | 0 | 0.00
+plugKeep | 853 | 0.96 | 1 | 276 | 1.11 | 2 | 2.613 | 0.000 | 0 | 0 | 0.00
+recenter | 853 | 1.32 | 26 | 276 | 1.09 | 2 | 2.613 | 0.000 | 0 | 0 | 99.00
+bestFit | 853 | 0.79 | 1 | 276 | 1.18 | 3 | 2.613 | 0.000 | 0 | 0 | 99.00
+controlNoFill | 853 | 0.00 | 0 | 276 | 2.94 | 22 | 5.058 | 2.605 | 288 | 1069 | 99.00
+
+## Far travel
+walk back the same 50 steps: ends on tile 0
+walk 50 random steps: far tile 1122, about 19 hyperbolic units from tile 0 (one transform multiplied along the whole path, the old way; NaN means it overflowed)
+walk back the same 200 steps: ends on tile 0
+walk 200 random steps: far tile 5228, about NaN hyperbolic units from tile 0 (one transform multiplied along the whole path, the old way; NaN means it overflowed)
+tiles 5529, vertices checked 4406, not closing after 5 tiles 0, duplicate positions 0
+
+## Browser checks (headless Chrome)
+after 50 random arrow presses: tiles drawn 1285  generated 16105  view tile 6839
+walked the same 50 steps back: view tile 0, workspace 1 tile 0, residual a=[1,0] b=[0,0], focus workspace 1  rotation 0 deg
+Back to center button from 50 steps out: view tile 0, workspace 1 tile 0, residual a=[1,0] b=[0,0], focus workspace 1  rotation 0 deg
+after 200 random arrow presses: tiles drawn 1285  generated 51970  view tile 47814
+walked the same 200 steps back: view tile 0, workspace 1 tile 0, residual a=[1,0] b=[0,0], focus workspace 1  rotation 0 deg
+Back to center button from 200 steps out: view tile 0, workspace 1 tile 0, residual a=[1,0] b=[0,0], focus workspace 1  rotation 0 deg
+before Home: focus workspace 2  rotation 90 deg
+after Home: view tile 0, anchor 0, residual b=[0,0], focus workspace 1  rotation 0 deg
+close the center workspace's windows, policy plugKeep
+plugKeep: holes after 0, center tile 0
+close the center workspace's windows, policy recenter
+recenter: holes after 0, center tile 1
+close the center workspace's windows, policy bestFit
+bestFit: holes after 0, center tile 0
+close the center workspace's windows, policy list
+list: holes after 0, center tile 0
+drag workspace 2 out to the far left, policy plugKeep; tiles before 0,1,4,3,2,7,14,15,13,11,10,8
+after drop: tiles 0,3,4,1,2,7,14,15,13,11,10,8, holes 0, center 0
+drag workspace 2 out to the far left, policy bestFit; tiles before 0,1,4,3,2,7,14,15,13,11,10,8
+after drop: tiles 0,3,4,1,2,7,14,15,13,11,10,8, holes 0, center 0
+5 workspaces, best fit: drag workspace 2 two tiles out to tile 12; tiles before 0,1,4,3,2, center 0
+after drop: tiles 0,12,13,3,11, holes 0, center 3
+drop workspace 2 on workspace 5 (occupied); tiles before 0,1,4,3,2,7,14,15,13,11,10,8
+after: tiles 0,2,4,3,1,7,14,15,13,11,10,8, holes 0
+clicked workspace 3: focus workspace 3  rotation 0 deg
+clicked it again: active workspace 3
+open a window in workspace 1: workspaces 2  radius 1.061  excess 0  holes 0
+moved right: focus workspace 2  rotation 0 deg
+opened a window there: workspaces 3  radius 1.061  excess 0  holes 0
+closed it: workspaces 2  radius 1.061  excess 0  holes 0
+arrows visual: start tile 7, ArrowLeft to tile 14, then ArrowRight 100 ms later ends on tile 38 (visual direction)
+arrows visual: start tile 7, ArrowLeft to tile 14, then ArrowRight 1200 ms later ends on tile 38 (visual direction)
+arrows quick: start tile 7, ArrowLeft to tile 14, then ArrowRight 100 ms later ends on tile 7 (went back)
+arrows quick: start tile 7, ArrowLeft to tile 14, then ArrowRight 1200 ms later ends on tile 38 (visual direction)
+arrows always: start tile 7, ArrowLeft to tile 14, then ArrowRight 100 ms later ends on tile 7 (went back)
+arrows always: start tile 7, ArrowLeft to tile 14, then ArrowRight 1200 ms later ends on tile 7 (went back)
+PERF 40 workspaces: draw 4.0 ms, tiles drawn 1285
+console errors in the old prototype run: 14, in the new one: 0
+
+# Round 1 (before the exact tile rework)
+
 ## Fill orders around tile 0
 distance vs corners: first difference at position 45 of 60 (-1 = none)
 distance vs rings: first difference at position 5

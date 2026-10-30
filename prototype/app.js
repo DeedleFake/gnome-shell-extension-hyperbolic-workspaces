@@ -1,17 +1,18 @@
-const {M, C, Tiling, lerpFrame, wrapAngle, FILL_ORDERS, REMOVAL_POLICIES, emptyState, addWorkspace, removeWorkspace, settle, metrics, fillSequence} = Hyper
+const {M, C, Tiling, lerpFrame, wrapAngle, REMOVAL_POLICIES, emptyState, addWorkspace, removeWorkspace, dropWorkspace, holes, gaps, metrics, fillSequence} = Hyper
 
 const OPTIONS = {
-  order: {distance: "Hyperbolic distance", rings: "Edge rings"},
-  policy: {list: "Linear list", shorter: "Shorter side", plug: "Plug, recenter", plugKeep: "Plug, center fixed"},
+  policy: {plugKeep: "Plug, center fixed", recenter: "Recenter, then settle", bestFit: "Least movement", list: "Linear list"},
   orient: {drift: "Drift", after: "Upright after move", blend: "Upright during move"},
-  settleMode: {immediate: "After a pause", leave: "When you leave it", never: "Never"},
+  back: {visual: "Always visual direction", quick: "Opposite goes back if pressed right away", always: "Opposite always goes back"},
+  backMs: {300: "300 ms", 600: "600 ms", 1000: "1000 ms"},
   snap: {on: "On", off: "Off"},
-  back: {on: "On", off: "Off"},
 }
-const opt = {order: "distance", policy: "plugKeep", orient: "blend", settleMode: "leave", snap: "on", back: "on"}
+const opt = {policy: "plugKeep", orient: "blend", back: "visual", backMs: "600", snap: "on"}
 const params = new URLSearchParams(location.search)
 for (const k of Object.keys(opt)) if (params.has(k)) opt[k] = params.get(k)
 const DUR = +(params.get("dur") ?? 300)
+const HOLD_MS = 350
+const ORDER = "distance"
 
 const T = new Tiling(4, 5)
 const canvas = document.getElementById("c")
@@ -19,10 +20,12 @@ const ctx = canvas.getContext("2d")
 let W = 0, H = 0, R = 0, cx = 0, cy = 0
 
 let S = emptyState()
-let V = M.id()
+// The view is a root tile plus a residual map that keeps the root near the
+// screen center; screen frame of tile t = view.R * frame(t relative to root).
+const view = {root: 0, R: M.id()}
 let focus = {tile: 0}
-let viewRoot = 0
-const anims = [] // {kind, ...}
+let active = null
+const anims = []
 let viewAnim = null
 let dirty = true
 const frameTimes = []
@@ -39,7 +42,6 @@ function log(line) {
   console.log("LOG " + line)
 }
 
-// Precomputed local geometry (central tile).
 const EDGE_SUB = 12
 const boundary = []
 for (let k = 0; k < 4; k++) {
@@ -57,21 +59,18 @@ function rectPoly(u0, v0, u1, v1, n = 8) {
   edge([u0, v0], [u1, v0]); edge([u1, v0], [u1, v1]); edge([u1, v1], [u0, v1]); edge([u0, v1], [u0, v0])
   return pts
 }
-const screenPoly = rectPoly(-0.96, -0.96 * ASPECT * 1.7, 0.96, 0.96 * ASPECT * 1.7, 10)
+const VMAX = 0.96 * ASPECT * 1.7
+const screenPoly = rectPoly(-0.96, -VMAX, 0.96, VMAX, 10)
 const winCache = new Map()
-function windowsFor(id) {
+function windowLayouts(id) {
   if (winCache.has(id)) return winCache.get(id)
   let seed = id * 9301 + 49297
   const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280)
-  const n = 1 + Math.floor(rnd() * 3)
   const wins = []
-  const vmax = 0.96 * ASPECT * 1.7
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < 6; i++) {
     const w = 0.5 + rnd() * 0.8, h = 0.35 + rnd() * 0.5
-    const u0 = -0.9 + rnd() * (1.8 - w), v1 = vmax - 0.12 - rnd() * (2 * vmax - h - 0.2)
-    const body = rectPoly(u0, v1 - h, u0 + w, v1)
-    const bar = rectPoly(u0, v1 - 0.09, u0 + w, v1, 6)
-    wins.push({body, bar, shade: 200 + Math.floor(rnd() * 50)})
+    const u0 = -0.9 + rnd() * (1.8 - w), v1 = VMAX - 0.12 - rnd() * (2 * VMAX - h - 0.2)
+    wins.push({body: rectPoly(u0, v1 - h, u0 + w, v1), bar: rectPoly(u0, v1 - 0.09, u0 + w, v1, 6), shade: 200 + Math.floor(rnd() * 50)})
   }
   winCache.set(id, wins)
   return wins
@@ -103,27 +102,39 @@ function path(F, pts) {
   ctx.closePath()
 }
 
-function visibleTiles() {
-  // Walk the root toward the view center, then flood outward.
-  for (;;) {
-    let best = viewRoot, bd = C.abs2(M.center(M.compose(V, T.tiles[viewRoot].M)))
-    for (const n of T.neighbors(viewRoot)) {
-      const d = C.abs2(M.center(M.compose(V, T.tiles[n].M)))
-      if (d < bd) { bd = d; best = n }
+// Fold whole tile steps into the root so the residual stays small.
+function rebase() {
+  for (let guard = 0; guard < 64; guard++) {
+    const t = T.tiles[view.root]
+    let best = -1, bd = C.abs2(M.center(view.R))
+    const nb = T.neighbors(view.root)
+    for (let k = 0; k < 4; k++) {
+      const d = C.abs2(M.center(M.compose(view.R, T.rel[k][t.tw[k]])))
+      if (d < bd - 1e-12) { bd = d; best = k }
     }
-    if (best === viewRoot) break
-    viewRoot = best
+    if (best === -1) break
+    view.R = M.norm(M.compose(view.R, T.rel[best][t.tw[best]]))
+    view.root = nb[best]
   }
-  const seen = new Set([viewRoot])
-  const out = [viewRoot]
-  for (let i = 0; i < out.length && out.length < 3000; i++)
-    for (const n of T.neighbors(out[i])) {
-      if (seen.has(n)) continue
-      seen.add(n)
-      const z = M.center(M.compose(V, T.tiles[n].M))
-      if (C.abs2(z) < 0.997 * 0.997) out.push(n)
-    }
+}
+
+const DRAW_DEPTH = 7
+let visCache = null
+function visible() {
+  rebase()
+  const fr = T.frames(view.root, DRAW_DEPTH)
+  const out = new Map()
+  for (const [id, {F}] of fr) {
+    const S = M.compose(view.R, F)
+    if (C.abs2(M.center(S)) < 0.997 * 0.997) out.set(id, S)
+  }
+  visCache = out
   return out
+}
+// Screen frame of a tile, or null when it is too far from the view to draw.
+function screenFrame(tile) {
+  const F = T.relFrame(view.root, tile, DRAW_DEPTH)
+  return F ? M.compose(view.R, F) : null
 }
 
 function wsAtTile() {
@@ -134,16 +145,17 @@ function wsAtTile() {
 
 function drawWorkspace(F, w, index, alpha) {
   const scale = 1 - C.abs2(M.center(F))
-  ctx.globalAlpha = alpha
+  const empty = w.wins === 0
+  ctx.globalAlpha = alpha * (empty ? 0.55 : 1)
   const hue = (w.id * 67) % 360
   path(F, boundary)
   ctx.fillStyle = `hsl(${hue} 35% 22%)`
   ctx.fill()
   path(F, screenPoly)
-  ctx.fillStyle = `hsl(${hue} 45% 34%)`
+  ctx.fillStyle = empty ? `hsl(${hue} 15% 18%)` : `hsl(${hue} 45% 34%)`
   ctx.fill()
   if (scale * R > 25)
-    for (const win of windowsFor(w.id)) {
+    for (const win of windowLayouts(w.id).slice(0, w.wins)) {
       path(F, win.body); ctx.fillStyle = `rgb(${win.shade},${win.shade},${win.shade + 5})`; ctx.fill()
       path(F, win.bar); ctx.fillStyle = "#2a2f37"; ctx.fill()
     }
@@ -153,10 +165,17 @@ function drawWorkspace(F, w, index, alpha) {
     ctx.font = `600 ${fs}px system-ui`
     ctx.textAlign = "center"; ctx.textBaseline = "middle"
     ctx.lineWidth = fs * 0.12; ctx.strokeStyle = "rgba(0,0,0,.7)"
-    ctx.strokeText(String(index + 1), x, y)
-    ctx.fillStyle = "#fff"; ctx.fillText(String(index + 1), x, y)
+    const label = empty ? `${index + 1} (empty)` : String(index + 1)
+    ctx.font = `600 ${empty ? fs * 0.6 : fs}px system-ui`
+    ctx.strokeText(label, x, y)
+    ctx.fillStyle = "#fff"; ctx.fillText(label, x, y)
   }
   ctx.globalAlpha = 1
+}
+
+function animFrame(a, p) {
+  const base = screenFrame(a.fromTile)
+  return base && M.compose(base, lerpFrame(a.off, a.rel, ease(p)))
 }
 
 function draw() {
@@ -164,51 +183,70 @@ function draw() {
   ctx.fillStyle = "#05080c"
   ctx.fillRect(0, 0, W, H)
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.fillStyle = "#0b1118"; ctx.fill()
-  const tiles = visibleTiles()
+  const vis = visible()
   const occ = wsAtTile()
-  const moving = new Set(anims.filter((a) => a.kind === "move").map((a) => a.id))
-  const nextFill = S.ws.length ? fillSequence(T, S.anchor, opt.order, 1, new Set(S.ws.map((w) => w.tile)))[0] : S.anchor
-  for (const id of tiles) {
-    const F = M.compose(V, T.tiles[id].M)
+  const hidden = new Set(anims.filter((a) => a.kind === "move").map((a) => a.id))
+  if (drag?.ws) hidden.add(drag.ws)
+  for (const [id, F] of vis) {
     const o = occ.get(id)
-    if (o && !moving.has(o.w.id)) drawWorkspace(F, o.w, o.i, o.w.far ? 0.85 : 1)
+    if (o && !hidden.has(o.w.id)) drawWorkspace(F, o.w, o.i, 1)
     path(F, boundary)
     ctx.lineWidth = 1
     ctx.strokeStyle = "#2a3a4c"
     ctx.stroke()
-    if (!o && id === nextFill) {
-      ctx.setLineDash([5, 4]); ctx.strokeStyle = "#5f7d9c"; ctx.lineWidth = 1.5; path(F, boundary); ctx.stroke(); ctx.setLineDash([])
-    }
   }
   const t = now()
   for (const a of anims) {
     const p = Math.min(1, (t - a.t0) / a.dur)
     if (a.kind === "move") {
       const w = S.ws.find((x) => x.id === a.id)
-      if (!w) continue
-      drawWorkspace(M.compose(V, lerpFrame(a.from, a.to, ease(p))), w, S.ws.indexOf(w), 1)
+      const F = w && animFrame(a, p)
+      if (F) drawWorkspace(F, w, S.ws.indexOf(w), 1)
     } else if (a.kind === "fade") {
-      drawWorkspace(M.compose(V, a.at), a.w, a.index, 1 - p)
+      const F = screenFrame(a.tile)
+      if (F) drawWorkspace(F, a.w, a.index, 1 - p)
     }
   }
-  // Focus ring.
   const fTile = focusTile()
-  if (fTile !== null) {
-    path(M.compose(V, T.tiles[fTile].M), boundary)
-    ctx.lineWidth = 3; ctx.strokeStyle = "#7fb6ff"; ctx.stroke()
+  const fF = fTile !== null ? vis.get(fTile) ?? null : null
+  if (fF) { path(fF, boundary); ctx.lineWidth = 3; ctx.strokeStyle = "#7fb6ff"; ctx.stroke() }
+  if (drag?.ws) {
+    const hover = drag.hover !== null ? vis.get(drag.hover) : null
+    if (hover) { ctx.setLineDash([6, 4]); path(hover, boundary); ctx.lineWidth = 2.5; ctx.strokeStyle = "#ffd36b"; ctx.stroke(); ctx.setLineDash([]) }
+    const w = S.ws.find((x) => x.id === drag.ws)
+    drawWorkspace(drag.frame, w, S.ws.indexOf(w), 0.85)
   }
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.lineWidth = 1; ctx.strokeStyle = "#3b4d61"; ctx.stroke()
+  for (const a of anims) if (a.kind === "enter") drawEnter(a, Math.min(1, (t - a.t0) / a.dur))
   const dt = now() - t0
   frameTimes.push(dt); if (frameTimes.length > 60) frameTimes.shift()
   const avg = frameTimes.reduce((x, y) => x + y, 0) / frameTimes.length
-  const {alpha} = fTile !== null ? M.split(M.compose(V, T.tiles[fTile].M)) : {alpha: 0}
-  const m = metrics(T, S, opt.order)
+  const alpha = fF ? M.split(fF).alpha : 0
+  const m = metrics(T, S, ORDER)
+  const nHoles = holes(T, S).length + gaps(T, S).length
+  const ai = S.ws.findIndex((w) => w.id === active)
   document.getElementById("status").textContent =
-    `workspaces ${m.n}  radius ${m.radius}  excess ${m.excess}\n` +
-    `tiles drawn ${tiles.length}  generated ${T.tiles.length}\n` +
+    `workspaces ${m.n}  radius ${m.radius}  excess ${m.excess}  holes ${nHoles}\n` +
+    `tiles drawn ${vis.size}  generated ${T.tiles.length}  view tile ${view.root}\n` +
     `draw ${dt.toFixed(1)} ms (avg ${avg.toFixed(1)})\n` +
+    `active ${ai >= 0 ? `workspace ${ai + 1}` : "none"}\n` +
     `focus ${focusLabel()}  rotation ${Math.round(wrapAngle(alpha) * 180 / Math.PI)} deg`
-  window.__stats = {drawMs: dt, avgMs: avg, tiles: tiles.length, generated: T.tiles.length}
+  window.__stats = {drawMs: dt, avgMs: avg, tiles: vis.size, generated: T.tiles.length, root: view.root, R: view.R}
+}
+
+function drawEnter(a, p) {
+  const [x0, y0] = toScreen(M.center(a.F))
+  const s = 1 - C.abs2(M.center(a.F))
+  const w0 = R * s * 0.9, h0 = w0 * ASPECT
+  const q = ease(Math.min(1, p * 1.6))
+  const w = w0 + (W - w0) * q, h = h0 + (H - h0) * q
+  const x = x0 + (W / 2 - x0) * q, y = y0 + (H / 2 - y0) * q
+  ctx.globalAlpha = p < 0.7 ? 0.9 : 0.9 * (1 - (p - 0.7) / 0.3)
+  ctx.fillStyle = `hsl(${(a.w.id * 67) % 360} 45% 34%)`
+  ctx.fillRect(x - w / 2, y - h / 2, w, h)
+  ctx.font = "600 34px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle"
+  ctx.fillStyle = "#fff"; ctx.fillText(`Entered workspace ${a.index + 1}`, x, y)
+  ctx.globalAlpha = 1
 }
 
 function focusTile() {
@@ -225,26 +263,28 @@ function focusLabel() {
   }
   return `empty tile ${focus.tile}`
 }
+const focusedWs = () => S.ws.find((x) => x.id === focus.ws) ?? null
 
 function setFocusTile(tile) {
-  const prev = focus.ws !== undefined ? S.ws.find((x) => x.id === focus.ws) : null
   const w = S.ws.find((x) => x.tile === tile)
   focus = w ? {ws: w.id} : {tile}
-  if (prev && prev.far && prev.id !== focus.ws && opt.settleMode === "leave") later(() => doSettle(prev.id), DUR)
 }
 
-// Animate the view so `tile` ends at the center.
-function goTo(tile, durScale = 1) {
-  const Mt = T.tiles[tile].M
-  const F0 = M.compose(V, Mt)
+// Animate the view so `tile` ends at the center. A tile too far away to draw
+// from here is brought in from just past the disk edge.
+function goTo(tile, {upright = false} = {}) {
+  let F0 = screenFrame(tile)
+  if (!F0) { F0 = M.to([0.97, 0]); log(`jump: tile ${tile} is out of drawing range, sliding it in from the edge`) }
   const c = M.center(F0)
   const drift = M.compose(M.inv(M.to(c)), F0)
   const d = M.dist0(F0)
-  const dur = DUR * durScale * Math.min(2, 0.75 + 0.25 * d / (2 * T.rE))
-  if (opt.orient === "drift") viewAnim = {Mt, phases: [{from: F0, to: drift, dur, rot: false}]}
-  else if (opt.orient === "blend") viewAnim = {Mt, phases: [{from: F0, to: M.id(), dur, rot: true}]}
-  else viewAnim = {Mt, phases: [{from: F0, to: drift, dur, rot: false}, {from: drift, to: M.id(), dur: DUR * 0.7, rot: true}]}
-  viewAnim.t0 = now()
+  const dur = DUR * Math.min(2, 0.75 + 0.25 * d / (2 * T.rE))
+  const orient = upright ? "blend" : opt.orient
+  let phases
+  if (orient === "drift") phases = [{from: F0, to: drift, dur, rot: false}]
+  else if (orient === "blend") phases = [{from: F0, to: M.id(), dur, rot: true}]
+  else phases = [{from: F0, to: drift, dur, rot: false}, {from: drift, to: M.id(), dur: DUR * 0.7, rot: true}]
+  viewAnim = {tile, phases, t0: now()}
   setFocusTile(tile)
   kick()
 }
@@ -252,27 +292,38 @@ function goTo(tile, durScale = 1) {
 function stepView() {
   if (!viewAnim) return false
   let t = now() - viewAnim.t0
+  view.root = viewAnim.tile
   for (const ph of viewAnim.phases) {
     if (t <= ph.dur) {
       const p = ease(t / ph.dur)
-      V = M.compose(lerpFrame(ph.from, ph.to, p, ph.rot ? p : 0), M.inv(viewAnim.Mt))
+      view.R = lerpFrame(ph.from, ph.to, p, ph.rot ? p : 0)
       return true
     }
     t -= ph.dur
   }
-  const last = viewAnim.phases.at(-1)
-  V = M.compose(last.to, M.inv(viewAnim.Mt))
+  view.R = viewAnim.phases.at(-1).to
   viewAnim = null
   return true
 }
+// Where the view is heading: the screen frame of `tile` once the current animation ends.
+function settledFrame(tile) {
+  if (viewAnim) {
+    const F = T.relFrame(viewAnim.tile, tile, 2)
+    return F && M.compose(viewAnim.phases.at(-1).to, F)
+  }
+  return screenFrame(tile)
+}
 
-function applyMoves(moves, follow = true) {
+function applyMoves(moves, {follow = true, starts = new Map()} = {}) {
   for (const m of moves) {
-    anims.push({kind: "move", id: m.id, from: T.tiles[m.from].M, to: T.tiles[m.to].M, t0: now(), dur: DUR * 1.2})
-    if (follow && focus.ws === m.id) {
-      // Keep the focused workspace still on screen; slide the plane under it.
-      const Fscreen = M.compose(V, T.tiles[m.from].M)
-      anims.push({kind: "follow", id: m.id, from: T.tiles[m.from].M, to: T.tiles[m.to].M, screen: Fscreen, t0: now(), dur: DUR * 1.2})
+    const st = starts.get(m.id)
+    const fromTile = st?.tile ?? m.from
+    const off = st?.off ?? M.id()
+    const rel = T.relFrame(fromTile, m.to, DRAW_DEPTH) ?? M.id()
+    anims.push({kind: "move", id: m.id, fromTile, off, rel, t0: now(), dur: DUR * 1.2})
+    if (follow && focus.ws === m.id && !viewAnim) {
+      const screen = screenFrame(m.from)
+      if (screen) anims.push({kind: "follow", fromTile: m.from, rel, screen, t0: now(), dur: DUR * 1.2})
     }
   }
   kick()
@@ -284,7 +335,11 @@ function stepAnims() {
   for (let i = anims.length - 1; i >= 0; i--) {
     const a = anims[i]
     const p = Math.min(1, (t - a.t0) / a.dur)
-    if (a.kind === "follow") V = M.compose(a.screen, M.inv(lerpFrame(a.from, a.to, ease(p))))
+    if (a.kind === "follow") {
+      // Keep the focused workspace still on screen; slide the plane under it.
+      view.root = a.fromTile
+      view.R = M.compose(a.screen, M.inv(lerpFrame(M.id(), a.rel, ease(p))))
+    }
     if (p >= 1) anims.splice(i, 1)
     any = true
   }
@@ -308,64 +363,92 @@ function later(fn, ms) {
 }
 
 function report(what, r) {
-  const m = metrics(T, r.state, opt.order, r.moves)
-  log(`${what} [${opt.order}/${opt.policy}] moves ${m.moves}, moved ${m.moved}, radius ${m.radius}, excess ${m.excess}, tiles ${r.state.ws.map((w) => w.tile).join(",")}`)
+  const m = metrics(T, r.state, ORDER, r.moves)
+  log(`${what} [${opt.policy}] moves ${m.moves}, moved ${m.moved}, radius ${m.radius}, excess ${m.excess}, holes ${holes(T, r.state).length + gaps(T, r.state).length}, tiles ${r.state.ws.map((w) => w.tile).join(",")}`)
 }
 
-function doAdd(at = null, focusIt = false) {
-  const r = addWorkspace(T, S, opt.order, at)
-  S = r.state
-  anims.push({kind: "fade", w: r.added, index: S.ws.length - 1, at: T.tiles[r.added.tile].M, t0: now(), dur: 1})
-  report(at === null ? "add" : `create far out at tile ${at}`, r)
-  if (focusIt) goTo(r.added.tile)
-  if (at !== null && opt.settleMode === "immediate") later(() => doSettle(r.added.id), 700)
-  kick()
-  return r.added
+function appendEmpty() {
+  const r = addWorkspace(T, S, ORDER)
+  S = {...r.state, ws: r.state.ws.map((w) => (w.id === r.added.id ? {...w, wins: 0} : w))}
+  anims.push({kind: "fade", w: {...r.added, wins: 0}, index: S.ws.length - 1, tile: r.added.tile, t0: now(), dur: 1})
 }
 
-function doSettle(id) {
-  if (opt.settleMode === "never") return
-  const r = settle(T, S, opt.order, id)
-  S = r.state
-  if (r.moves.length) { report("settle", r); applyMoves(r.moves) }
+// GNOME's dynamic workspaces: empty ones go away unless they are the last one
+// or the active one, and there is always exactly one empty workspace at the end.
+function checkWorkspaces() {
+  for (;;) {
+    const last = S.ws.length - 1
+    const idx = S.ws.findIndex((w, i) => w.wins === 0 && i !== last && w.id !== active)
+    if (idx === -1) break
+    doRemove(idx)
+  }
+  if (!S.ws.length || S.ws.at(-1).wins > 0) appendEmpty()
   kick()
+}
+
+function openWindow() {
+  const w = focusedWs()
+  if (!w) return
+  S = {...S, ws: S.ws.map((x) => (x.id === w.id ? {...x, wins: x.wins + 1} : x))}
+  log(`open window in workspace ${S.ws.findIndex((x) => x.id === w.id) + 1} (${w.wins + 1} windows)`)
+  checkWorkspaces()
+}
+
+function closeWindow(all = false) {
+  const w = focusedWs()
+  if (!w || w.wins === 0) return
+  const n = all ? 0 : w.wins - 1
+  S = {...S, ws: S.ws.map((x) => (x.id === w.id ? {...x, wins: n} : x))}
+  log(`close ${all ? "all windows" : "a window"} in workspace ${S.ws.findIndex((x) => x.id === w.id) + 1} (${n} left)`)
+  checkWorkspaces()
+}
+
+function enter(w) {
+  const F = screenFrame(w.tile)
+  const index = S.ws.indexOf(w)
+  active = w.id
+  anims.push({kind: "enter", w, index, F: F ?? M.id(), t0: now(), dur: DUR * 3})
+  log(`entered workspace ${index + 1}`)
+  checkWorkspaces()
 }
 
 function doRemove(idx) {
-  if (idx < 0 || idx >= S.ws.length) return
   const wasFocused = focus.ws === S.ws[idx].id
-  const r = removeWorkspace(T, S, opt.order, opt.policy, idx)
-  anims.push({kind: "fade", w: r.removed, index: idx, at: T.tiles[r.removed.tile].M, t0: now(), dur: DUR})
+  const r = removeWorkspace(T, S, ORDER, opt.policy, idx)
+  anims.push({kind: "fade", w: r.removed, index: idx, tile: r.removed.tile, t0: now(), dur: DUR})
   S = r.state
   report(`remove #${idx + 1}`, r)
   if (wasFocused) {
-    const hole = r.removed.tile
-    const filler = S.ws.find((w) => w.tile === hole)
+    const filler = S.ws.find((w) => w.tile === r.removed.tile)
     const next = filler ?? S.ws[Math.min(idx, S.ws.length - 1)]
     focus = next ? {ws: next.id} : {tile: S.anchor}
-    applyMoves(r.moves, false)
+    applyMoves(r.moves, {follow: false})
     if (next && !filler) later(() => goTo(next.tile), DUR * 0.3)
   } else applyMoves(r.moves)
-  kick()
 }
 
 let lastMove = null
 function neighborMove(dirAngle) {
   const from = focusTile() ?? S.anchor
-  // After re-orienting, the tile you came from may no longer sit opposite the
-  // arrow you pressed; this makes the opposite arrow go back anyway.
-  if (opt.back === "on" && lastMove && lastMove.to === from && Math.abs(wrapAngle(dirAngle - lastMove.dir - Math.PI)) < 0.1) {
-    lastMove = {from, to: lastMove.from, dir: dirAngle}
+  const t = now()
+  const opposite = lastMove && lastMove.to === from && Math.abs(wrapAngle(dirAngle - lastMove.dir - Math.PI)) < 0.1
+  const quick = lastMove && t - lastMove.t < +opt.backMs
+  if (opposite && (opt.back === "always" || (opt.back === "quick" && quick))) {
+    log(`arrow: opposite of last move, going back to tile ${lastMove.from}`)
+    lastMove = {from, to: lastMove.from, dir: dirAngle, t}
     goTo(lastMove.to)
     return
   }
+  const base = settledFrame(from) ?? M.id()
+  const tt = T.tiles[from], nb = T.neighbors(from)
   let best = -1, err = 9
-  for (const n of T.neighbors(from)) {
-    const z = M.center(M.compose(V, T.tiles[n].M))
+  for (let k = 0; k < 4; k++) {
+    const z = M.center(M.compose(base, T.rel[k][tt.tw[k]]))
     const e = Math.abs(wrapAngle(Math.atan2(z[1], z[0]) - dirAngle))
-    if (e < err) { err = e; best = n }
+    if (e < err) { err = e; best = nb[k] }
   }
-  lastMove = {from, to: best, dir: dirAngle}
+  log(`arrow: visual neighbor tile ${best}`)
+  lastMove = {from, to: best, dir: dirAngle, t}
   goTo(best)
 }
 
@@ -376,25 +459,34 @@ function listMove(delta) {
   goTo(S.ws[j].tile)
 }
 
-function reset() {
-  for (const id of timers) clearTimeout(id)
-  timers.clear()
-  S = emptyState(); V = M.id(); focus = {tile: 0}; viewRoot = 0; anims.length = 0; viewAnim = null
-  doAdd(); focus = {ws: S.ws[0].id}
-  kick()
+function goHome() {
+  log(`center: back to tile ${S.anchor}`)
+  goTo(S.anchor, {upright: true})
 }
 
+function build(n) {
+  for (const id of timers) clearTimeout(id)
+  timers.clear()
+  S = emptyState(); view.root = 0; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
+  appendEmpty()
+  active = S.ws[0].id
+  focus = {ws: S.ws[0].id}
+  for (let i = 0; i < n; i++) {
+    S = {...S, ws: S.ws.map((x, j) => (j === S.ws.length - 1 ? {...x, wins: 1 + ((x.id * 7) % 3)} : x))}
+    appendEmpty()
+  }
+  anims.length = 0
+  kick()
+}
+const reset = () => build(1)
+
 const RUN = {
-  add: () => doAdd(),
-  add12: () => { for (let i = 0; i < 12; i++) doAdd() },
-  removeFocused: () => doRemove(S.ws.findIndex((w) => w.id === focus.ws)),
-  reset,
-  scRemoveCenter: () => { reset(); for (let i = 1; i < 12; i++) doAdd(); later(() => doRemove(0), 400) },
-  scRemove2: () => { reset(); for (let i = 1; i < 10; i++) doAdd(); later(() => doRemove(1), 400) },
-  scFar: () => {
-    reset(); for (let i = 1; i < 5; i++) doAdd()
-    const far = [...T.rings(S.anchor, 3)].find(([, r]) => r === 3)[0]
-    later(() => doAdd(far, true), 300)
+  openWindow, closeWindow: () => closeWindow(false), closeAll: () => closeWindow(true), reset, center: goHome,
+  enterFocused: () => { const w = focusedWs(); if (w) enter(w) },
+  fill12: () => build(11),
+  scCloseCenter: () => {
+    build(11)
+    later(() => { focus = {ws: S.ws.find((w) => w.tile === S.anchor).id }; active = null; closeWindow(true) }, 400)
   },
 }
 
@@ -402,21 +494,45 @@ const RUN = {
 let drag = null
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId)
-  drag = {x: e.clientX, y: e.clientY, last: toDisk(e.offsetX, e.offsetY), moved: false, rotate: e.shiftKey || e.button === 2}
-  viewAnim = null
+  const z = toDisk(e.offsetX, e.offsetY)
+  const hit = C.abs2(z) < 1 ? hitTest(z) : null
+  const occ = hit !== null ? wsAtTile().get(hit) : null
+  drag = {x: e.clientX, y: e.clientY, last: z, moved: false, rotate: e.shiftKey || e.button === 2, ws: null, hover: null, frame: null, t0: now(), candidate: occ?.w.id ?? null}
+  if (drag.candidate !== null && !drag.rotate) {
+    const d = drag
+    later(() => {
+      if (drag !== d || d.moved) return
+      d.ws = d.candidate
+      d.hover = hit
+      d.frame = M.compose(M.to(z), M.rot(M.split(screenFrame(hit)).alpha))
+      log(`picked up workspace ${S.ws.findIndex((w) => w.id === d.ws) + 1}`)
+      kick()
+    }, HOLD_MS)
+  }
 })
 canvas.addEventListener("pointermove", (e) => {
   if (!drag) return
+  const p = toDisk(e.offsetX, e.offsetY)
+  if (drag.ws !== null) {
+    const clamp = (z) => { const r = Math.sqrt(C.abs2(z)); return r > 0.98 ? C.scale(z, 0.98 / r) : z }
+    const z = clamp(p)
+    drag.frame = M.compose(M.to(z), M.rot(M.split(drag.frame).alpha))
+    drag.hover = hitTest(z)
+    drag.moved = true
+    kick()
+    return
+  }
   if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true
   if (!drag.moved) return
-  const p = toDisk(e.offsetX, e.offsetY)
   const clamp = (z) => { const r = Math.sqrt(C.abs2(z)); return r > 0.95 ? C.scale(z, 0.95 / r) : z }
+  viewAnim = null
   if (drag.rotate) {
     const da = Math.atan2(p[1], p[0]) - Math.atan2(drag.last[1], drag.last[0])
-    V = M.compose(M.rot(da), V)
+    view.R = M.compose(M.rot(da), view.R)
   } else {
-    V = M.compose(M.compose(M.to(clamp(p)), M.inv(M.to(clamp(drag.last)))), V)
+    view.R = M.compose(M.compose(M.to(clamp(p)), M.inv(M.to(clamp(drag.last)))), view.R)
   }
+  rebase()
   drag.last = p
   kick()
 })
@@ -424,30 +540,39 @@ canvas.addEventListener("pointerup", (e) => {
   const d = drag
   drag = null
   if (!d) return
+  if (d.ws !== null) { drop(d); return }
   if (d.moved) {
-    if (opt.snap === "on") { visibleTiles(); goTo(viewRoot) }
+    if (opt.snap === "on") { rebase(); goTo(view.root) }
     return
   }
   const z = toDisk(e.offsetX, e.offsetY)
   if (C.abs2(z) >= 1) return
   const hit = hitTest(z)
-  if (hit === null) return
-  const occ = wsAtTile().get(hit)
-  if (occ) goTo(hit)
-  else doAdd(hit === nextFillTile() ? null : hit, true)
+  const occ = hit !== null ? wsAtTile().get(hit) : null
+  if (!occ) return
+  const centered = !viewAnim && focus.ws === occ.w.id && C.abs2(M.center(screenFrame(hit))) < 1e-6
+  if (centered) enter(occ.w)
+  else goTo(hit)
 })
 canvas.addEventListener("contextmenu", (e) => e.preventDefault())
-canvas.addEventListener("wheel", (e) => { e.preventDefault(); V = M.compose(M.rot(-e.deltaY * 0.003), V); kick() }, {passive: false})
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); view.R = M.compose(M.rot(-e.deltaY * 0.003), view.R); kick() }, {passive: false})
 
-function nextFillTile() {
-  return fillSequence(T, S.anchor, opt.order, 1, new Set(S.ws.map((w) => w.tile)))[0]
+function drop(d) {
+  const w = S.ws.find((x) => x.id === d.ws)
+  const target = d.hover ?? w.tile
+  const r = dropWorkspace(T, S, w.id, target, opt.policy)
+  const base = screenFrame(target)
+  const starts = new Map()
+  if (base) starts.set(w.id, {tile: target, off: M.compose(M.inv(base), d.frame)})
+  if (!r.moves.some((m) => m.id === w.id)) r.moves.push({id: w.id, from: w.tile, to: w.tile})
+  S = r.state
+  report(`drop workspace ${S.ws.findIndex((x) => x.id === w.id) + 1} on tile ${target}${r.swapped ? " (swap)" : ""}`, r)
+  applyMoves(r.moves, {follow: false, starts})
 }
 
-// Clicks go through the inverse map: find the tile whose local square contains the point.
 function hitTest(z) {
-  for (const id of visibleTiles()) {
-    const local = M.apply(M.inv(M.compose(V, T.tiles[id].M)), z)
-    if (T.insideLocal(local)) return id
+  for (const [id, F] of visCache ?? visible()) {
+    if (T.insideLocal(M.apply(M.inv(F), z))) return id
   }
   return null
 }
@@ -457,11 +582,13 @@ window.addEventListener("keydown", (e) => {
   if (e.key in dirs) { e.preventDefault(); neighborMove(dirs[e.key]) }
   else if (e.key === "PageDown") { e.preventDefault(); listMove(1) }
   else if (e.key === "PageUp") { e.preventDefault(); listMove(-1) }
-  else if (e.key === "a") doAdd()
-  else if (e.key === "x" || e.key === "Delete") RUN.removeFocused()
+  else if (e.key === "Home") { e.preventDefault(); goHome() }
+  else if (e.key === "Enter") RUN.enterFocused()
+  else if (e.key === "o") openWindow()
+  else if (e.key === "c") closeWindow(false)
+  else if (e.key === "x" || e.key === "Delete") closeWindow(true)
 })
 
-// Panel.
 for (const el of document.querySelectorAll("[data-opt]")) {
   const k = el.dataset.opt
   for (const [v, label] of Object.entries(OPTIONS[k])) {
@@ -482,11 +609,13 @@ syncPanel()
 window.app = {
   run: (k) => RUN[k](),
   set: (k, v) => { opt[k] = v; syncPanel(); kick() },
-  remove: (i) => doRemove(i),
-  addAt: (tile, focusIt = true) => doAdd(tile, focusIt),
-  goTo, T, M, get S() { return S }, get V() { return V }, setV: (v) => { V = v; kick() },
+  goTo, goHome, T, M, view, build,
+  get S() { return S }, get focus() { return focus },
+  screenOf: (tile) => { const F = screenFrame(tile); return F && toScreen(M.center(F)) },
+  setFocus: (id) => { focus = {ws: id} },
   idle: () => !viewAnim && anims.length === 0 && timers.size === 0,
   redraw: () => { draw() },
+  holes: () => holes(T, S).length + gaps(T, S).length,
 }
 
 resize()

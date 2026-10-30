@@ -22,29 +22,29 @@
   <canvas id="c"></canvas>
   <div id="panel">
     <div class="help">
-      Drag to pan. Shift-drag or wheel to rotate.<br>
-      Click a workspace to go to it. Click an empty tile to create a workspace there.<br>
-      Ctrl+arrows (or arrows): neighbor tile. PgUp/PgDn: walk the list.<br>
-      A: add. X or Delete: remove the focused workspace.
+      Click a workspace to center it. Click the centered one to enter it.<br>
+      Drag to pan, shift-drag or wheel to rotate. Press and hold a workspace, then drag it to move it.<br>
+      Arrows: neighbor tile. PgUp/PgDn: walk the list. Home: back to the center.<br>
+      O: open a window in the focused workspace. C: close one. X: close all. Enter: enter.
     </div>
-    <h2>Fill order</h2><div class="opts" data-opt="order"></div>
     <h2>Removal</h2><div class="opts" data-opt="policy"></div>
+    <h2>Arrow keys</h2><div class="opts" data-opt="back"></div>
+    <h2>"Right away" means within</h2><div class="opts" data-opt="backMs"></div>
     <h2>Orientation</h2><div class="opts" data-opt="orient"></div>
-    <h2>Workspace created far out moves inward</h2><div class="opts" data-opt="settleMode"></div>
-    <h2>Snap to nearest tile after a drag</h2><div class="opts" data-opt="snap"></div>
-    <h2>Opposite arrow always goes back</h2><div class="opts" data-opt="back"></div>
+    <h2>Snap to nearest tile after a pan</h2><div class="opts" data-opt="snap"></div>
     <h2>Actions</h2>
     <div class="opts">
-      <button data-run="add">Add</button>
-      <button data-run="removeFocused">Remove focused</button>
-      <button data-run="add12">Add 12</button>
-      <button data-run="reset">Reset</button>
+      <button data-run="center">Back to center</button>
+      <button data-run="openWindow">Open window</button>
+      <button data-run="closeWindow">Close window</button>
+      <button data-run="closeAll">Close all windows</button>
+      <button data-run="enterFocused">Enter</button>
     </div>
     <h2>Scenarios</h2>
     <div class="opts">
-      <button data-run="scRemoveCenter">12, remove center</button>
-      <button data-run="scRemove2">10, remove #2</button>
-      <button data-run="scFar">5, create far out</button>
+      <button data-run="fill12">12 workspaces</button>
+      <button data-run="scCloseCenter">12, close the center</button>
+      <button data-run="reset">Reset</button>
     </div>
     <h2>Status</h2><div id="status"></div>
     <h2>Log</h2><div id="log"></div>

@@ -7,13 +7,11 @@ const out = []
 const log = (...a) => out.push(a.join(" "))
 
 const seqD = fillSequence(T, 0, "distance", 120)
-const seqC = fillSequence(T, 0, "corners", 60)
 const seqR = fillSequence(T, 0, "rings", 120)
 const firstDiff = (a, b) => a.findIndex((x, i) => x !== b[i])
 log("## Fill orders around tile 0")
-log("distance vs corners: first difference at position", firstDiff(seqD.slice(0,60), seqC), "of 60 (-1 = none)")
 log("distance vs rings: first difference at position", firstDiff(seqD, seqR))
-const d0 = (id) => T.distBetween(T.tiles[0].M, T.tiles[id].M).toFixed(3)
+const d0 = (id) => T.dist(0, id).toFixed(3)
 for (const [name, s] of [["distance", seqD], ["rings", seqR]]) log(`${name} first 17 (tile:dist):`, s.slice(0, 17).map((id) => `${id}:${d0(id)}`).join(" "))
 for (const n of [5, 13, 17, 30, 60]) log(`radius needed for ${n} workspaces: distance ${d0(seqD[n - 1])}, rings ${d0(seqR.slice(0, n).sort((a, b) => d0(b) - d0(a))[0])}`)
 
@@ -79,14 +77,14 @@ function walk(path) {
   for (const ch of path) {
     let best = -1, bestErr = 9, c = null
     for (const n of T.neighbors(focus)) {
-      const z = M.center(M.compose(V, T.tiles[n].M))
+      const z = M.center(M.compose(V, T.abs(n)))
       const err = Math.abs(H.wrapAngle(Math.atan2(z[1], z[0]) - dirs[ch]))
       if (err < bestErr) { bestErr = err; best = n; c = z }
     }
     V = M.compose(M.inv(M.to(c)), V)
     focus = best
   }
-  const {alpha} = M.split(M.compose(V, T.tiles[focus].M))
+  const {alpha} = M.split(M.compose(V, T.abs(focus)))
   return {focus, deg: Math.round((H.wrapAngle(alpha) * 180) / Math.PI)}
 }
 for (const p of ["RL", "RU", "RULD", "RULDR", "RURU", "RRUULLDD", "RDLU", "RULDRULD"]) {
