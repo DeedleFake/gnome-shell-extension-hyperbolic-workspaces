@@ -702,6 +702,7 @@ window.app = {
   get drag() { return drag },
   get rim() { return rim },
   screenAngle,
+  movingFrames: () => anims.filter((a) => a.kind === "move").map((a) => ({id: a.id, F: animFrame(a, now())})),
 }
 
 resize()
