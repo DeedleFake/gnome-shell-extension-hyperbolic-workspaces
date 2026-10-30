@@ -7,7 +7,7 @@ const OPTIONS = {
   snap: {on: "On", off: "Off"},
   moveMod: {shift: "Shift", alt: "Alt", ctrl: "Ctrl", ctrlalt: "Ctrl+Alt"},
 }
-const opt = {orient: "blend", back: "visual", backMs: "600", snap: "on", moveMod: "shift"}
+const opt = {orient: "after", back: "visual", backMs: "600", snap: "on", moveMod: "shift"}
 const params = new URLSearchParams(location.search)
 for (const k of Object.keys(opt)) if (params.has(k)) opt[k] = params.get(k)
 const DUR = +(params.get("dur") ?? 300)
