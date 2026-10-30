@@ -1,11 +1,15 @@
 Browser prototype of the {4,5} hyperbolic workspace layout. No build step or server: run `xdg-open prototype/index.html` from the repo root.
 
-Controls:
-- Click a workspace to center it. Click the centered one to enter it.
-- Drag to pan. Shift-drag or the wheel rotates.
-- Press and hold a workspace, then drag it somewhere else. Dropping it on another workspace swaps the two. Dropping it anywhere else settles every workspace back into one compact group.
-- Arrows move to a neighbor tile. PgUp/PgDn walk the workspace list. Home or "Back to center" returns to the center workspace, upright.
-- O opens a window in the focused workspace, C closes one, X closes all of them, Enter enters it. Like GNOME, a workspace exists while it has windows, and there is always one empty workspace at the end.
+Every tile is a workspace. The colored ones have windows and form one connected group; the rest are empty and look like the bare grid. Workspaces with windows are numbered in the order their first window opened.
 
-The side panel switches the removal policy, the arrow key behavior, orientation and pan snapping.
-`node prototype/sim.js` checks every policy for holes under random churn. `node prototype/far.js` checks that tiles stay exact far from the center. `node prototype/scenarios.js` and `node prototype/backtrack.js` print the earlier numbers. `results.txt` has the output.
+Controls:
+- Click any tile to center it. Click the centered one to enter it, empty or not.
+- Drag to pan. Shift-drag or the wheel rotates. Ctrl+Alt-drag pans even when the drag starts on a workspace (`PAN_MODIFIER` in `app.js`).
+- Press and hold a workspace, then drag it. While you hover, the plane previews the result. Drop it on any empty tile; if that tile doesn't touch the group, it lands there and then slides back to the nearest tile that does. Drop it on another workspace to insert it there: that workspace, and any in a straight line behind it, move one tile on in the direction you came from, up to the first empty tile.
+- Arrows move to a neighbor tile. PgUp/PgDn walk the workspaces with windows. Home or "Back to center" returns to the center tile, the one workspace 1 started on, upright.
+- O opens a window on the focused tile, C closes one, X closes all of them, Enter enters it. The first window on a tile away from the group slides that workspace over to the group, and the view follows it.
+
+Stay connected: whenever closing a workspace's last window or moving a workspace splits the group, the biggest piece stays put and each smaller piece slides over, keeping its shape, until it touches the group again. Nothing else moves.
+
+The side panel switches the arrow key behavior, orientation and pan snapping.
+`node prototype/sim.js [ops] [seed]` runs random open/close/drag churn and checks that the group stays connected and that nothing moves except the insert chain, a newly opened far workspace, and cut-off pieces, each rigidly. `node prototype/far.js` checks that tiles stay exact far from the center. `node prototype/backtrack.js` prints the earlier backtracking numbers. `scenarios.js` measured the old removal policies and only runs at commit ce3f40f. `results.txt` has the output.

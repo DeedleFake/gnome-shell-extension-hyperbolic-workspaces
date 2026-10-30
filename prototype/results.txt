@@ -1,3 +1,14 @@
+# Round 3: stay connected, insert drag, every tile a workspace
+
+## Stay connected, 5000 random ops, seed 7 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 30% drag within 5 tiles; up to 30 workspaces), 94937 ms
+opens 1758 (1587 away from the group slid over to join it; 3 first windows on an empty plane stayed off-center), closes 1728 (927 split the group; 2588 workspaces slid, most in one close 17)
+drops 1514: 671 on empty tiles (621 slid back to the group), 843 inserts (avg chain 1.88, max 6); 1073 drops split the rest
+fallbacks to one-at-a-time 0; max workspaces 30; every check passed
+## Stay connected, 5000 random ops, seed 99 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 30% drag within 5 tiles; up to 30 workspaces), 113618 ms
+opens 1784 (1585 away from the group slid over to join it; 3 first windows on an empty plane stayed off-center), closes 1755 (968 split the group; 3065 workspaces slid, most in one close 14)
+drops 1461: 686 on empty tiles (620 slid back to the group), 775 inserts (avg chain 1.90, max 7); 1036 drops split the rest
+fallbacks to one-at-a-time 0; max workspaces 30; every check passed
+
 # Round 2: compact groups, drag and drop, exact tiles
 
 ## Random churn, 2000 ops per policy, seeded (45% add, 40% remove, 15% drag to a random tile up to 4 steps out; 1..30 workspaces)

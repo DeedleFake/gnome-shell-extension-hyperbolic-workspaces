@@ -268,207 +268,127 @@ function fillSequence(T, anchor, order, count, exclude = new Set()) {
   return out
 }
 
-// Placement state: the list order is Mutter's workspace order. The center
-// (anchor) starts as the first workspace's tile; policies decide where it goes.
+// Placement state: `ws` holds the workspaces that have windows, in the order
+// their first window opened. The center (anchor) is the origin tile.
 function emptyState() {
   return {anchor: 0, ws: [], nextId: 1}
 }
 
 const occupied = (s) => new Set(s.ws.map((w) => w.tile))
 
-function addWorkspace(T, s, order, at = null) {
-  const tile = at ?? (s.ws.length === 0 ? s.anchor : fillSequence(T, s.anchor, order, 1, occupied(s))[0])
-  const w = {id: s.nextId, tile, far: at !== null}
-  const ws = [...s.ws, w]
-  return {state: {...s, ws, nextId: s.nextId + 1, anchor: s.ws.length ? s.anchor : tile}, moves: [], added: w}
+// Every tile is a workspace; only tiles with windows are in `ws`. The center
+// is the origin tile. Opening the first window on an empty tile adds it; one
+// that doesn't touch the group slides over to the nearest tile that does.
+function openWorkspace(T, s, tile) {
+  const w = {id: s.nextId, tile}
+  const raw = [...s.ws, w]
+  const {ws, fallbacks} = connect(T, {...s, ws: raw}, w.id)
+  return {...finish({...s, ws: raw}, ws, s.anchor), state: {...s, ws, nextId: s.nextId + 1}, added: w, raw, fallbacks}
 }
 
-function rankKey(T, s, order) {
-  return keyerFor(T, s.anchor, order)
+// Free tile touching the group nearest the center (the center if the group is empty).
+function nearestFree(T, s, order = "distance") {
+  if (!s.ws.length) return s.anchor
+  const occ = occupied(s), keyOf = keyerFor(T, s.anchor, order)
+  let best = null
+  for (const w of s.ws)
+    for (const n of T.neighbors(w.tile))
+      if (!occ.has(n) && (best === null || cmp(keyOf(n), keyOf(best)) < 0)) best = n
+  return best
 }
 
-// Move a far-out workspace inward if a better free tile exists.
-function settle(T, s, order, wsId) {
-  const w = s.ws.find((x) => x.id === wsId)
-  if (!w) return {state: s, moves: []}
-  const occ = occupied(s)
-  occ.delete(w.tile)
-  const best = fillSequence(T, s.anchor, order, 1, occ)[0]
-  const keyOf = rankKey(T, s, order)
-  if (best === w.tile || cmp(keyOf(best), keyOf(w.tile)) >= 0)
-    return {state: {...s, ws: s.ws.map((x) => (x.id === wsId ? {...x, far: false} : x))}, moves: []}
-  const ws = s.ws.map((x) => (x.id === wsId ? {...x, tile: best, far: false} : x))
-  return {state: {...s, ws}, moves: [{id: wsId, from: w.tile, to: best}]}
-}
-
-// Min-cost assignment of n rows to m >= n columns (Hungarian, O(n^2 m)).
-function assign(cost) {
-  const n = cost.length, m = cost[0].length
-  const u = new Array(n + 1).fill(0), v = new Array(m + 1).fill(0)
-  const p = new Array(m + 1).fill(0), way = new Array(m + 1).fill(0)
-  for (let i = 1; i <= n; i++) {
-    p[0] = i
-    let j0 = 0
-    const minv = new Array(m + 1).fill(Infinity), used = new Array(m + 1).fill(false)
-    do {
-      used[j0] = true
-      const i0 = p[j0]
-      let delta = Infinity, j1 = 0
-      for (let j = 1; j <= m; j++)
-        if (!used[j]) {
-          const cur = cost[i0 - 1][j - 1] - u[i0] - v[j]
-          if (cur < minv[j]) { minv[j] = cur; way[j] = j0 }
-          if (minv[j] < delta) { delta = minv[j]; j1 = j }
-        }
-      for (let j = 0; j <= m; j++)
-        if (used[j]) { u[p[j]] += delta; v[j] -= delta } else minv[j] -= delta
-      j0 = j1
-    } while (p[j0] !== 0)
-    do { const j1 = way[j0]; p[j0] = p[j1]; j0 = j1 } while (j0)
+// Groups of edge-adjacent tiles, in list order of their first workspace.
+function components(T, s) {
+  const occ = occupied(s), seen = new Set(), out = []
+  for (const w of s.ws) {
+    if (seen.has(w.tile)) continue
+    const tiles = [w.tile]
+    seen.add(w.tile)
+    for (let i = 0; i < tiles.length; i++)
+      for (const n of T.neighbors(tiles[i])) if (occ.has(n) && !seen.has(n)) { seen.add(n); tiles.push(n) }
+    out.push(tiles)
   }
-  const rowTo = new Array(n)
-  for (let j = 1; j <= m; j++) if (p[j]) rowTo[p[j] - 1] = j - 1
-  return rowTo
+  return out
 }
 
-function tileDist(T, a, b) {
-  T.distCache ??= new Map()
-  const k = a < b ? `${a},${b}` : `${b},${a}`
-  let d = T.distCache.get(k)
-  if (d === undefined) { d = T.dist(a, b); T.distCache.set(k, d) }
-  return d
-}
-
-// A compact clump of n around `anchor`: every tile closer than the outermost
-// distance shell is filled, and the rest sit somewhere on that shell.
-function shells(T, anchor, n) {
-  if (n === 0) return {inner: [], outer: []}
-  const r = rd(tileDist(T, anchor, fillSequence(T, anchor, "distance", n)[n - 1]))
-  for (let extra = 24; ; extra *= 2) {
-    const seq = fillSequence(T, anchor, "distance", n + extra)
-    if (rd(tileDist(T, anchor, seq.at(-1))) > r) {
-      const inner = [], outer = []
-      for (const id of seq) {
-        const d = rd(tileDist(T, anchor, id))
-        if (d < r) inner.push(id)
-        else if (d === r) outer.push(id)
-      }
-      return {inner, outer}
+// Image of `tiles` under the tiling symmetry that sends `from` to `to` and
+// edge k of `from` to edge (k + turn) % 4 of `to`. Exact: it only follows links.
+function mapShape(T, tiles, from, to, turn) {
+  const set = new Set(tiles)
+  const img = new Map([[from, [to, turn]]])
+  const queue = [from]
+  for (let i = 0; i < queue.length; i++) {
+    const u = queue[i], [t, o] = img.get(u)
+    const nu = T.neighbors(u), nt = T.neighbors(t)
+    for (let k = 0; k < 4; k++) {
+      const n = nu[k]
+      if (!set.has(n) || img.has(n)) continue
+      const m = nt[(k + o) % 4]
+      img.set(n, [m, (T.neighbors(m).indexOf(t) - T.neighbors(n).indexOf(u) + 8) % 4])
+      queue.push(n)
     }
   }
+  return new Map([...img].map(([u, [t]]) => [u, t]))
 }
 
-const MOVE_COST = 0.25
-const BIG = 1000
-
-// Settle every workspace into a compact clump around one of `anchors`, moving
-// them as little as possible. `pin` = {id, tile, weight} pulls one workspace
-// toward a tile (a drop target).
-function coalesce(T, s, anchors, pin = null) {
-  const n = s.ws.length
-  if (n === 0) return finish(s, [], s.anchor)
+// Slide `piece` so it touches `main`, keeping its shape: try every tiling
+// symmetry that lands it on free tiles next to `main` and keep the one with the
+// least total travel (sum of hyperbolic distances each workspace moves).
+function slidePiece(T, occ, main, piece) {
+  const r = piece[0], own = new Set(piece), mainSet = new Set(main)
+  // Frames of the piece's tiles relative to r, by walking the piece itself.
+  const F = new Map([[r, M.id()]])
+  for (const u of F.keys())
+    T.neighbors(u).forEach((n, k) => { if (own.has(n) && !F.has(n)) F.set(n, M.compose(F.get(u), T.rel[k][T.tiles[u].tw[k]])) })
   let best = null
-  for (const A of anchors) {
-    const {inner, outer} = shells(T, A, n)
-    const cols = [...inner, ...outer]
-    const cost = s.ws.map((w) => cols.map((c, j) => {
-      let x = c === w.tile ? 0 : tileDist(T, w.tile, c) + MOVE_COST
-      if (pin && pin.id === w.id) x = pin.weight * tileDist(T, pin.tile, c) + 0.01 * x
-      return x - (j < inner.length ? BIG : 0)
-    }))
-    const rowTo = assign(cost)
-    const total = rowTo.reduce((acc, j, i) => acc + cost[i][j], 0) + BIG * inner.length
-    if (!best || total < best.total - 1e-9) best = {total, A, tiles: rowTo.map((j) => cols[j])}
+  for (const [t, {F: Ft}] of T.frames(r, piece.length === 1 ? 8 : 7)) {
+    if (occ.has(t) && !own.has(t)) continue
+    for (let turn = 0; turn < (piece.length === 1 ? 1 : 4); turn++) {
+      const img = mapShape(T, piece, r, t, turn)
+      let ok = true, touches = false
+      for (const v of img.values()) {
+        if (occ.has(v) && !own.has(v)) { ok = false; break }
+        if (!touches && T.neighbors(v).some((n) => mainSet.has(n))) touches = true
+      }
+      if (!ok || !touches) continue
+      const G = M.compose(Ft, M.rot((turn * Math.PI) / 2))
+      let cost = 0
+      for (const Fu of F.values()) cost += M.dist0(M.compose(M.inv(Fu), M.compose(G, Fu)))
+      if (cost < (best?.cost ?? Infinity) - 1e-9) best = {cost, img}
+    }
   }
-  return finish(s, s.ws.map((w, i) => ({...w, tile: best.tiles[i], far: false})), best.A)
+  return best?.img ?? null
 }
 
-const nearAnchors = (T, s, depth = 2) => [...T.rings(s.anchor, depth).keys()]
-
-const REMOVAL_POLICIES = {
-  list: {
-    label: "linear list (everything after shifts)",
-    remove(T, s, order, idx) {
-      const rest = s.ws.filter((_, i) => i !== idx)
-      const slots = fillSequence(T, s.anchor, order, rest.length)
-      const ws = rest.map((w, i) => ({...w, tile: slots[i], far: false}))
-      return finish(s, ws, s.anchor)
-    },
-  },
-  plugKeep: {
-    label: "plug the hole, center never moves",
-    remove(T, s, order, idx) {
-      const hole = s.ws[idx].tile
-      let ws = s.ws.filter((_, i) => i !== idx)
-      if (ws.length === 0) return finish(s, ws, s.anchor)
-      const keyOf = rankKey(T, s, order)
-      let worst = 0
-      for (let i = 1; i < ws.length; i++) if (cmp(keyOf(ws[i].tile), keyOf(ws[worst].tile)) > 0) worst = i
-      if (cmp(keyOf(ws[worst].tile), keyOf(hole)) > 0) ws = ws.map((w, i) => (i === worst ? {...w, tile: hole} : w))
-      return finish(s, ws, s.anchor)
-    },
-  },
-  recenter: {
-    label: "center removed: next in the list becomes the center, the rest settle around it",
-    remove(T, s, order, idx) {
-      const rest = {...s, ws: s.ws.filter((_, i) => i !== idx)}
-      if (!rest.ws.length) return finish(s, [], s.anchor)
-      const anchor = s.ws[idx].tile === s.anchor ? rest.ws[Math.min(idx, rest.ws.length - 1)].tile : s.anchor
-      const r = coalesce(T, rest, [anchor])
-      return finish(s, r.state.ws, r.state.anchor)
-    },
-  },
-  bestFit: {
-    label: "least movement, center may shift",
-    remove(T, s, order, idx) {
-      const rest = {...s, ws: s.ws.filter((_, i) => i !== idx)}
-      if (!rest.ws.length) return finish(s, [], s.anchor)
-      const r = coalesce(T, rest, nearAnchors(T, s))
-      return finish(s, r.state.ws, r.state.anchor)
-    },
-  },
-}
-
-// Drop workspace `id` on `tile`. An occupied tile swaps; anything else
-// coalesces the whole clump, pulling the dropped one toward the drop. Only the
-// best-fit policy lets the center shift.
-function dropWorkspace(T, s, id, tile, policy = "bestFit") {
-  const w = s.ws.find((x) => x.id === id)
-  const other = s.ws.find((x) => x.tile === tile)
-  if (other && other.id === id) return finish(s, s.ws, s.anchor)
-  if (other) {
-    const ws = s.ws.map((x) => (x.id === id ? {...x, tile} : x.id === other.id ? {...x, tile: w.tile} : x))
-    return {...finish(s, ws, s.anchor), swapped: other.id}
+// Stay connected: while the group is split, the biggest piece stays put and the
+// next biggest slides over to touch it. Ties keep the piece without `mover`
+// (a dropped workspace), then the one on the center tile, then list order.
+function connect(T, s, mover = null) {
+  let ws = s.ws
+  let fallbacks = 0
+  for (;;) {
+    const comps = components(T, {...s, ws})
+    if (comps.length < 2) return {ws, fallbacks}
+    const moverTile = ws.find((w) => w.id === mover)?.tile
+    const rank = (c) => [-c.length, c.includes(moverTile) ? 1 : 0, c.includes(s.anchor) ? 0 : 1]
+    const order = comps.map((c, i) => ({c, k: [...rank(c), i]})).sort((x, y) => cmp(x.k, y.k)).map((x) => x.c)
+    const [main, piece] = order
+    const occ = new Set(ws.map((w) => w.tile))
+    let img = slidePiece(T, occ, main, piece)
+    if (!img) {
+      // No symmetry fits within reach: move them one at a time instead.
+      fallbacks++
+      img = new Map()
+      for (const u of piece) {
+        occ.delete(u)
+        const one = slidePiece(T, occ, main, [u])
+        img.set(u, one.get(u))
+        occ.add(one.get(u))
+        main.push(one.get(u))
+      }
+    }
+    ws = ws.map((w) => (img.has(w.tile) ? {...w, tile: img.get(w.tile)} : w))
   }
-  const moved = {...s, ws: s.ws.map((x) => (x.id === id ? {...x, tile} : x))}
-  const anchors = policy === "bestFit" ? nearAnchors(T, s) : [s.anchor]
-  const r = coalesce(T, moved, anchors, {id, tile, weight: 2})
-  return finish(s, r.state.ws, r.state.anchor)
-}
-
-// Empty tiles closer to the center than the farthest workspace.
-function gaps(T, s) {
-  if (!s.ws.length) return []
-  const occ = occupied(s)
-  const r = Math.max(...s.ws.map((w) => rd(tileDist(T, s.anchor, w.tile))))
-  return fillSequence(T, s.anchor, "distance", s.ws.length + 64).filter((id) => !occ.has(id) && rd(tileDist(T, s.anchor, id)) < r)
-}
-
-// Empty tiles that can't reach the open plane through other empty tiles.
-function holes(T, s) {
-  if (!s.ws.length) return []
-  const occ = occupied(s)
-  const ring = T.rings(s.anchor, 6)
-  const maxR = Math.max(...s.ws.map((w) => ring.get(w.tile) ?? 99))
-  const region = T.rings(s.anchor, maxR + 2)
-  const seen = new Set()
-  const stack = [...region].filter(([, r]) => r === maxR + 2).map(([id]) => id)
-  stack.forEach((id) => seen.add(id))
-  while (stack.length) {
-    const id = stack.pop()
-    for (const nb of T.neighbors(id)) if (region.has(nb) && !occ.has(nb) && !seen.has(nb)) { seen.add(nb); stack.push(nb) }
-  }
-  return [...region.keys()].filter((id) => !occ.has(id) && !seen.has(id))
 }
 
 function finish(s, ws, anchor) {
@@ -477,20 +397,49 @@ function finish(s, ws, anchor) {
   return {state: {...s, ws, anchor}, moves}
 }
 
-function removeWorkspace(T, s, order, policy, idx) {
-  const removed = s.ws[idx]
-  return {...REMOVAL_POLICIES[policy].remove(T, s, order, idx), removed}
+// Every way a workspace goes away ends here.
+function removeWorkspace(T, s, idx) {
+  const raw = s.ws.filter((_, i) => i !== idx)
+  const {ws, fallbacks} = connect(T, {...s, ws: raw})
+  return {...finish(s, ws, s.anchor), removed: s.ws[idx], raw, fallbacks}
 }
 
-function metrics(T, s, order, moves = []) {
-  const d = (id) => tileDist(T, s.anchor, id)
-  const radius = s.ws.length ? Math.max(...s.ws.map((w) => d(w.tile))) : 0
-  const ideal = s.ws.length ? Math.max(...fillSequence(T, s.anchor, order, s.ws.length).map(d)) : 0
-  const moved = moves.reduce((acc, m) => acc + tileDist(T, m.from, m.to), 0)
-  return {n: s.ws.length, moves: moves.length, moved: +moved.toFixed(2), radius: +radius.toFixed(3), excess: +(radius - ideal).toFixed(3)}
+// Neighbor of `tile` that a drag entering it from `prev` crossed from: `prev`
+// itself when adjacent, else the neighbor closest to `prev`.
+function entryTile(T, tile, prev) {
+  const nb = T.neighbors(tile)
+  if (prev === null || nb.includes(prev)) return prev
+  return nb.reduce((a, b) => (T.dist(b, prev) < T.dist(a, prev) ? b : a))
 }
 
-const api = {C, M, wrapAngle, lerpFrame, Tiling, FILL_ORDERS, fillSequence, emptyState, addWorkspace, settle, REMOVAL_POLICIES, removeWorkspace, dropWorkspace, coalesce, holes, gaps, metrics}
+// Drop workspace `id` on `tile`, entering it from neighbor `from`. Any empty
+// tile is fine. An occupied tile inserts: the occupant and everything behind it
+// in a straight line (in at one edge, out the opposite one) shift one tile on,
+// up to the first empty tile, which may be the one the dragged workspace left.
+// Then the group is reconnected, with the dropped one sliding back if it is
+// off on its own.
+function dropWorkspace(T, s, id, tile, from = null) {
+  const w = s.ws.find((x) => x.id === id)
+  if (tile === w.tile) return {...finish(s, s.ws, s.anchor), landed: tile, chain: [], raw: s.ws, fallbacks: 0}
+  const at = new Map(s.ws.filter((x) => x.id !== id).map((x) => [x.tile, x]))
+  const to = new Map([[id, tile]])
+  const chain = []
+  if (at.has(tile)) {
+    let prev = entryTile(T, tile, from ?? w.tile), cur = tile
+    while (at.has(cur)) {
+      const nb = T.neighbors(cur)
+      const next = nb[(nb.indexOf(prev) + 2) % 4]
+      chain.push(at.get(cur).id)
+      to.set(at.get(cur).id, next)
+      prev = cur; cur = next
+    }
+  }
+  const raw = s.ws.map((x) => (to.has(x.id) ? {...x, tile: to.get(x.id)} : x))
+  const {ws, fallbacks} = connect(T, {...s, ws: raw}, id)
+  return {...finish(s, ws, s.anchor), landed: tile, chain, raw, fallbacks}
+}
+
+const api = {C, M, wrapAngle, lerpFrame, Tiling, FILL_ORDERS, fillSequence, emptyState, openWorkspace, nearestFree, components, mapShape, connect, removeWorkspace, entryTile, dropWorkspace}
 if (typeof module !== 'undefined') module.exports = api
 else root.Hyper = api
 })(this)
