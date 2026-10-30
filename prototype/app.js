@@ -305,15 +305,6 @@ function stepView() {
   viewAnim = null
   return true
 }
-// Where the view is heading: the screen frame of `tile` once the current animation ends.
-function settledFrame(tile) {
-  if (viewAnim) {
-    const F = T.relFrame(viewAnim.tile, tile, 2)
-    return F && M.compose(viewAnim.phases.at(-1).to, F)
-  }
-  return screenFrame(tile)
-}
-
 function applyMoves(moves, {follow = true, starts = new Map()} = {}) {
   for (const m of moves) {
     const st = starts.get(m.id)
@@ -439,12 +430,15 @@ function neighborMove(dirAngle) {
     goTo(lastMove.to)
     return
   }
-  const base = settledFrame(from) ?? M.id()
+  // Measure against the tiles as drawn this frame, mid-animation included, so a
+  // pending upright rotation can't flip the directions.
+  const base = screenFrame(from) ?? M.id()
+  const c = M.center(base)
   const tt = T.tiles[from], nb = T.neighbors(from)
   let best = -1, err = 9
   for (let k = 0; k < 4; k++) {
     const z = M.center(M.compose(base, T.rel[k][tt.tw[k]]))
-    const e = Math.abs(wrapAngle(Math.atan2(z[1], z[0]) - dirAngle))
+    const e = Math.abs(wrapAngle(Math.atan2(z[1] - c[1], z[0] - c[0]) - dirAngle))
     if (e < err) { err = e; best = nb[k] }
   }
   log(`arrow: visual neighbor tile ${best}`)
