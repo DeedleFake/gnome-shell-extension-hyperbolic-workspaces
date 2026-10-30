@@ -84,7 +84,7 @@ function resize() {
   canvas.height = r.height * dpr
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   W = r.width; H = r.height
-  R = Math.min(W, H) / 2 - 12
+  R = Math.min(W, H) / 2 - 26
   cx = W / 2; cy = H / 2
   dirty = true
 }
@@ -136,6 +136,60 @@ function visible() {
 function screenFrame(tile) {
   const F = T.relFrame(view.root, tile, DRAW_DEPTH)
   return F ? M.compose(view.R, F) : null
+}
+
+// Screen angle of any tile, however far. Composes the steps up the creation
+// tree from the view tile to the common ancestor and back down to `tile`.
+// Matrices aren't renormalised (|a|^2 - |b|^2 cancels to noise far out); a
+// positive rescale each step keeps them finite and leaves the angle exact.
+function screenAngle(tile) {
+  const near = screenFrame(tile)
+  let F = near
+  if (!F) {
+    const step = (t) => T.rel[T.tiles[t].pk][T.tiles[T.tiles[t].parent].tw[T.tiles[t].pk]]
+    const up = new Map()
+    for (let t = view.root; t !== -1; t = T.tiles[t].parent) up.set(t, up.size)
+    const down = []
+    let lca = tile
+    for (; !up.has(lca); lca = T.tiles[lca].parent) down.push(lca)
+    const mul = (f, g) => {
+      const a = C.add(C.mul(f.a, g.a), C.mul(f.b, C.conj(g.b))), b = C.add(C.mul(f.a, g.b), C.mul(f.b, C.conj(g.a)))
+      const k = 1 / Math.sqrt(C.abs2(a))
+      return {a: C.scale(a, k), b: C.scale(b, k)}
+    }
+    F = view.R
+    for (let t = view.root; t !== lca; t = T.tiles[t].parent) F = mul(F, M.inv(step(t)))
+    for (let i = down.length - 1; i >= 0; i--) F = mul(F, step(down[i]))
+  }
+  const z = M.center(F)
+  return Math.atan2(z[1], z[0])
+}
+
+// The rim arrow toward the group aims for full opacity once the group's largest
+// workspace is drawn at four rings' size (scale 0.06), where window contents
+// stop being drawn, and for none at three rings' size (0.15). The shown opacity
+// eases toward that over RIM_FADE_MS, so a fast slide doesn't make it pop.
+const RIM_SHOW = 0.06, RIM_HIDE = 0.15, RIM_FADE_MS = 200
+let rim = null
+function groupIndicator(vis) {
+  let s = 0
+  for (const w of S.ws) { const F = vis.get(w.tile); if (F) s = Math.max(s, 1 - C.abs2(M.center(F))) }
+  const target = S.ws.length ? Math.max(0, Math.min(1, (RIM_HIDE - s) / (RIM_HIDE - RIM_SHOW))) : 0
+  const t = now(), prev = rim ?? {alpha: 0, t}
+  const k = Math.min(1, (t - prev.t) / RIM_FADE_MS)
+  const alpha = target > prev.alpha ? Math.min(target, prev.alpha + k) : Math.max(target, prev.alpha - k)
+  const angle = alpha > 0 && S.ws.length ? screenAngle(S.anchor) : prev.angle ?? null
+  return {alpha, target, angle, size: s, t}
+}
+function drawRim(ind) {
+  if (!ind || ind.alpha <= 0) return
+  const u = [Math.cos(ind.angle), -Math.sin(ind.angle)], v = [-u[1], u[0]]
+  const at = (r, side) => [cx + u[0] * r + v[0] * side, cy + u[1] * r + v[1] * side]
+  ctx.globalAlpha = ind.alpha
+  ctx.beginPath(); ctx.arc(cx, cy, R, -ind.angle - 0.12, -ind.angle + 0.12); ctx.lineWidth = 3; ctx.strokeStyle = "#ffd36b"; ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(...at(R + 20, 0)); ctx.lineTo(...at(R + 5, -9)); ctx.lineTo(...at(R + 5, 9)); ctx.closePath()
+  ctx.fillStyle = "#ffd36b"; ctx.fill()
+  ctx.globalAlpha = 1
 }
 
 function wsAtTile() {
@@ -231,6 +285,9 @@ function draw() {
     drawWorkspace(drag.frame, w, 0.85)
   }
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.lineWidth = 1; ctx.strokeStyle = "#3b4d61"; ctx.stroke()
+  rim = groupIndicator(vis)
+  drawRim(rim)
+  if (rim.alpha !== rim.target) kick()
   for (const a of anims) if (a.kind === "enter") drawEnter(a, Math.min(1, (t - a.t0) / a.dur))
   const dt = now() - t0
   frameTimes.push(dt); if (frameTimes.length > 60) frameTimes.shift()
@@ -284,7 +341,11 @@ function setFocusTile(tile) {
 // from here is brought in from just past the disk edge.
 function goTo(tile, {upright = false} = {}) {
   let F0 = screenFrame(tile)
-  if (!F0) { F0 = M.to([0.97, 0]); log(`jump: tile ${tile} is out of drawing range, sliding it in from the edge`) }
+  if (!F0) {
+    const a = screenAngle(tile)
+    F0 = M.to([0.97 * Math.cos(a), 0.97 * Math.sin(a)])
+    log(`jump: tile ${tile} is out of drawing range, sliding it in from the edge it lies past`)
+  }
   const c = M.center(F0)
   const drift = M.compose(M.inv(M.to(c)), F0)
   const d = M.dist0(F0)
@@ -549,7 +610,11 @@ canvas.addEventListener("pointerup", (e) => {
     return
   }
   const z = toDisk(e.offsetX, e.offsetY)
-  if (C.abs2(z) >= 1) return
+  if (C.abs2(z) >= 1) {
+    // The rim arrow leads back to the center.
+    if (rim?.alpha > 0.5 && Math.abs(wrapAngle(Math.atan2(z[1], z[0]) - rim.angle)) < 0.15 && C.abs2(z) < 1.2) goHome()
+    return
+  }
   const hit = hitTest(z)
   if (hit === null) return
   const centered = !viewAnim && focusTile() === hit && C.abs2(M.center(screenFrame(hit))) < 1e-6
@@ -631,10 +696,12 @@ window.app = {
   get S() { return S }, get focus() { return focus },
   screenOf: (tile) => { const F = screenFrame(tile); return F && toScreen(M.center(F)) },
   setFocus: (id) => { focus = {ws: id} },
-  idle: () => !viewAnim && anims.length === 0 && timers.size === 0,
+  idle: () => !viewAnim && anims.length === 0 && timers.size === 0 && (!rim || rim.alpha === rim.target),
   redraw: () => { draw() },
   pieces: () => components(T, S).length,
   get drag() { return drag },
+  get rim() { return rim },
+  screenAngle,
 }
 
 resize()
