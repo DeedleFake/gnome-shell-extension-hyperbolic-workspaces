@@ -1,0 +1,78 @@
+## Fill orders around tile 0
+distance vs corners: first difference at position 45 of 60 (-1 = none)
+distance vs rings: first difference at position 5
+distance first 17 (tile:dist): 0:0.000 1:1.061 4:1.061 3:1.061 2:1.061 7:1.617 14:1.617 15:1.617 13:1.617 11:1.617 10:1.617 8:1.617 6:1.617 5:2.123 16:2.123 12:2.123 9:2.123
+rings first 17 (tile:dist): 0:0.000 1:1.061 4:1.061 3:1.061 2:1.061 5:2.123 7:1.617 14:1.617 16:2.123 15:1.617 13:1.617 12:2.123 11:1.617 10:1.617 9:2.123 8:1.617 6:1.617
+radius needed for 5 workspaces: distance 1.061, rings 1.061
+radius needed for 13 workspaces: distance 1.617, rings 2.123
+radius needed for 17 workspaces: distance 2.123, rings 2.123
+radius needed for 30 workspaces: distance 2.613, rings 3.184
+radius needed for 60 workspaces: distance 3.234, rings 4.245
+
+## Removal scenarios
+order | policy | scenario | moves | distance moved | radius after | excess over ideal | center moved
+distance | list | 12, remove center (#1) | 11 | 17.92 | 1.617 | 0 | false
+distance | list | 10, remove #2 | 8 | 13.67 | 1.617 | 0 | false
+distance | list | 10, remove #9 | 1 | 2.12 | 1.617 | 0 | false
+distance | list | 13, remove #5 | 8 | 13.07 | 1.617 | 0 | false
+distance | shorter | 12, remove center (#1) | 0 | 0 | 2.613 | 0.996 | true
+distance | shorter | 10, remove #2 | 1 | 1.06 | 2.613 | 0.996 | true
+distance | shorter | 10, remove #9 | 1 | 2.12 | 1.617 | 0 | false
+distance | shorter | 13, remove #5 | 4 | 5.91 | 2.613 | 0.996 | true
+distance | plug | 12, remove center (#1) | 0 | 0 | 2.613 | 0.996 | true
+distance | plug | 10, remove #2 | 1 | 2.61 | 1.617 | 0 | false
+distance | plug | 10, remove #9 | 1 | 2.12 | 1.617 | 0 | false
+distance | plug | 13, remove #5 | 1 | 1.62 | 1.617 | 0 | false
+distance | plugKeep | 12, remove center (#1) | 1 | 1.62 | 1.617 | 0 | false
+distance | plugKeep | 10, remove #2 | 1 | 2.61 | 1.617 | 0 | false
+distance | plugKeep | 10, remove #9 | 1 | 2.12 | 1.617 | 0 | false
+distance | plugKeep | 13, remove #5 | 1 | 1.62 | 1.617 | 0 | false
+rings | list | 12, remove center (#1) | 11 | 17.11 | 2.123 | 0 | false
+rings | list | 10, remove #2 | 8 | 13.38 | 2.123 | 0 | false
+rings | list | 10, remove #9 | 1 | 1.62 | 2.123 | 0 | false
+rings | list | 13, remove #5 | 8 | 12.82 | 2.123 | 0 | false
+rings | shorter | 12, remove center (#1) | 0 | 0 | 3.184 | 1.061 | true
+rings | shorter | 10, remove #2 | 1 | 1.06 | 2.613 | 0.49 | true
+rings | shorter | 10, remove #9 | 1 | 1.62 | 2.123 | 0 | false
+rings | shorter | 13, remove #5 | 4 | 5.91 | 3.184 | 1.061 | true
+rings | plug | 12, remove center (#1) | 0 | 0 | 3.184 | 1.061 | true
+rings | plug | 10, remove #2 | 1 | 2.45 | 2.123 | 0 | false
+rings | plug | 10, remove #9 | 1 | 1.62 | 2.123 | 0 | false
+rings | plug | 13, remove #5 | 1 | 1.62 | 2.123 | 0 | false
+rings | plugKeep | 12, remove center (#1) | 1 | 2.12 | 2.123 | 0 | false
+rings | plugKeep | 10, remove #2 | 1 | 2.45 | 2.123 | 0 | false
+rings | plugKeep | 10, remove #9 | 1 | 1.62 | 2.123 | 0 | false
+rings | plugKeep | 13, remove #5 | 1 | 1.62 | 2.123 | 0 | false
+
+## Create far out with 5 workspaces, then settle
+distance : created at tile 45 dist 4.245 -> settles to tile 7 dist 1.617 travel 3.67
+rings : created at tile 45 dist 4.245 -> settles to tile 5 dist 2.123 travel 2.12
+
+## Random churn, 400 ops, seeded (60% add, 40% remove random, 1..20 workspaces)
+order | policy | removals | avg moves/removal | max moves | avg distance moved/removal | avg radius excess | center changes
+distance | list | 194 | 7.21 | 19 | 17.15 | 0.000 | 0
+distance | shorter | 194 | 3.65 | 9 | 8.91 | 2.701 | 88
+distance | plug | 194 | 0.89 | 1 | 2.64 | 0.338 | 13
+distance | plugKeep | 194 | 0.94 | 1 | 2.59 | 0.000 | 0
+rings | list | 194 | 7.21 | 19 | 11.21 | 0.000 | 0
+rings | shorter | 194 | 3.65 | 9 | 9.20 | 2.559 | 88
+rings | plug | 194 | 0.88 | 1 | 2.56 | 0.361 | 13
+rings | plugKeep | 194 | 0.94 | 1 | 2.65 | 0.000 | 0
+
+## Orientation drift (keyboard neighbor moves, no re-orientation)
+path RL: ends on tile 0, content rotated 0 deg
+path RU: ends on tile 6, content rotated 0 deg
+path RULD: ends on tile 2, content rotated 90 deg
+path RULDR: ends on tile 0, content rotated 90 deg
+path RURU: ends on tile 53, content rotated 0 deg
+path RRUULLDD: ends on tile 691, content rotated -90 deg
+path RDLU: ends on tile 4, content rotated -90 deg
+path RULDRULD: ends on tile 8, content rotated -180 deg
+closed loops back to the start tile (path:rotation deg): RL:0 UD:0 LR:0 DU:0 RRLL:0 RUDL:0 RLRL:0 RLUD:0 RLLR:0 RLDU:0 RDUL:0 URLD:0 UUDD:0 ULRD:0 UDRL:0 UDUD:0 UDLR:0 UDDU:0 LRRL:0 LRUD:0 LRLR:0 LRDU:0 LUDR:0 LLRR:0 LDUR:0 DRLU:0 DURL:0 DUUD:0 DULR:0 DUDU:0 DLRU:0 DDUU:0
+drift arrow then opposite fails to return: 0/1200 neighbor frame vs transported frame (deg:count): {"0":993,"90":81,"180":25,"-90":80,"-180":21}
+upright arrow then opposite fails to return: 207/1200 
+first 5 tiles: 0/4 adjacent pairs whose upright frames disagree with walking straight across the edge
+first 17 tiles: 4/20 adjacent pairs whose upright frames disagree with walking straight across the edge
+first 41 tiles: 12/52 adjacent pairs whose upright frames disagree with walking straight across the edge
+PERF real clock, 12 workspaces: 9.13 ms per frame, 1641 tiles drawn (headless Chrome, canvas 2D, software)
+PERF real clock, 40 workspaces: 11.01 ms per frame, 1641 tiles drawn (headless Chrome, canvas 2D, software)

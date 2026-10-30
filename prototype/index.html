@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hyperbolic workspaces prototype</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #05080c; color: #cfd8e3; font: 13px system-ui, sans-serif; overflow: hidden; }
+  #wrap { display: flex; height: 100%; }
+  canvas { flex: 1 1 0; min-width: 0; height: 100%; display: block; cursor: grab; }
+  #panel { width: 300px; padding: 10px 12px; box-sizing: border-box; background: #0d131b; overflow-y: auto; border-left: 1px solid #1d2733; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #7f93a8; margin: 14px 0 6px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 4px; }
+  button { background: #1a2532; color: #d8e2ee; border: 1px solid #2b3a4b; border-radius: 4px; padding: 4px 8px; font: inherit; cursor: pointer; }
+  button.on { background: #2f6db5; border-color: #4b8ad6; }
+  #log { font: 11px ui-monospace, monospace; white-space: pre-wrap; color: #9fb2c6; max-height: 260px; overflow-y: auto; }
+  #status { font: 11px ui-monospace, monospace; color: #9fb2c6; }
+  .help { color: #7f93a8; font-size: 12px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c"></canvas>
+  <div id="panel">
+    <div class="help">
+      Drag to pan. Shift-drag or wheel to rotate.<br>
+      Click a workspace to go to it. Click an empty tile to create a workspace there.<br>
+      Ctrl+arrows (or arrows): neighbor tile. PgUp/PgDn: walk the list.<br>
+      A: add. X or Delete: remove the focused workspace.
+    </div>
+    <h2>Fill order</h2><div class="opts" data-opt="order"></div>
+    <h2>Removal</h2><div class="opts" data-opt="policy"></div>
+    <h2>Orientation</h2><div class="opts" data-opt="orient"></div>
+    <h2>Workspace created far out moves inward</h2><div class="opts" data-opt="settleMode"></div>
+    <h2>Snap to nearest tile after a drag</h2><div class="opts" data-opt="snap"></div>
+    <h2>Opposite arrow always goes back</h2><div class="opts" data-opt="back"></div>
+    <h2>Actions</h2>
+    <div class="opts">
+      <button data-run="add">Add</button>
+      <button data-run="removeFocused">Remove focused</button>
+      <button data-run="add12">Add 12</button>
+      <button data-run="reset">Reset</button>
+    </div>
+    <h2>Scenarios</h2>
+    <div class="opts">
+      <button data-run="scRemoveCenter">12, remove center</button>
+      <button data-run="scRemove2">10, remove #2</button>
+      <button data-run="scFar">5, create far out</button>
+    </div>
+    <h2>Status</h2><div id="status"></div>
+    <h2>Log</h2><div id="log"></div>
+  </div>
+</div>
+<script src="hyper.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
