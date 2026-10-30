@@ -217,11 +217,30 @@ function drawWorkspace(F, w, alpha) {
 }
 
 // A move is a list of segments, each from a tile-relative offset to another.
+// A segment with `rigid` moves the workspace with its whole piece: every member
+// follows the same interpolated symmetry G (in the piece root's frame), so the
+// piece keeps its shape every frame; `turn` spins the workspace in place onto
+// its new tile's orientation.
+function segRel(seg, e) {
+  if (!seg.rigid) return lerpFrame(seg.off, seg.rel, e)
+  const {Fu, G, turn} = seg.rigid
+  return M.compose(M.compose(M.inv(Fu), lerpFrame(M.id(), G, e)), M.compose(Fu, M.rot(turn * e)))
+}
 function animFrame(a, t) {
   let el = t - a.t0, seg = a.segs.at(-1), p = 1
   for (const sg of a.segs) { if (el <= sg.dur) { seg = sg; p = el / sg.dur; break } el -= sg.dur }
   const base = screenFrame(seg.fromTile)
-  return base && M.compose(base, lerpFrame(seg.off, seg.rel, ease(p)))
+  return base && M.compose(base, segRel(seg, ease(p)))
+}
+
+// Path of a slide from `fromTile` to `to`: rigid with its piece when `via`
+// starts there.
+function slideSeg(fromTile, to, via, dur) {
+  const rel = T.relFrame(fromTile, to, DRAW_DEPTH) ?? M.id()
+  const Fu = via && via.from === fromTile && T.relFrame(via.root, fromTile, DRAW_DEPTH)
+  if (!Fu) return {fromTile, off: M.id(), rel, dur}
+  const D = M.compose(M.inv(Fu), M.compose(via.G, Fu))
+  return {fromTile, off: M.id(), rel, dur, rigid: {Fu, G: via.G, turn: wrapAngle(M.split(M.compose(M.inv(D), rel)).alpha)}}
 }
 
 function draw() {
@@ -380,15 +399,14 @@ function applyMoves(moves, {follow = true, starts = new Map()} = {}) {
   for (const m of moves) {
     const st = starts.get(m.id)
     const fromTile = st?.tile ?? m.from
-    const rel = T.relFrame(fromTile, m.to, DRAW_DEPTH) ?? M.id()
     // A drop away from the group lands on its tile first, then slides back.
     const segs = st && fromTile !== m.to
-      ? [{fromTile, off: st.off, rel: M.id(), dur: DUR * 0.6}, {fromTile, off: M.id(), rel: M.id(), dur: DUR * 0.4}, {fromTile, off: M.id(), rel, dur: DUR * 1.5}]
-      : [{fromTile, off: st?.off ?? M.id(), rel, dur: DUR * 1.2}]
+      ? [{fromTile, off: st.off, rel: M.id(), dur: DUR * 0.6}, {fromTile, off: M.id(), rel: M.id(), dur: DUR * 0.4}, slideSeg(fromTile, m.to, m.via, DUR * 1.5)]
+      : st ? [{fromTile, off: st.off, rel: T.relFrame(fromTile, m.to, DRAW_DEPTH) ?? M.id(), dur: DUR * 1.2}] : [slideSeg(fromTile, m.to, m.via, DUR * 1.2)]
     anims.push({kind: "move", id: m.id, segs, t0: now(), dur: segs.reduce((x, g) => x + g.dur, 0)})
     if (follow && focus.ws === m.id && !viewAnim) {
       const screen = screenFrame(m.from)
-      if (screen) anims.push({kind: "follow", fromTile: m.from, rel, screen, t0: now(), dur: DUR * 1.2})
+      if (screen) anims.push({kind: "follow", fromTile: m.from, seg: segs[0], screen, t0: now(), dur: DUR * 1.2})
     }
   }
   kick()
@@ -403,7 +421,7 @@ function stepAnims() {
     if (a.kind === "follow") {
       // Keep the focused workspace still on screen; slide the plane under it.
       view.root = a.fromTile
-      view.R = M.compose(a.screen, M.inv(lerpFrame(M.id(), a.rel, ease(p))))
+      view.R = M.compose(a.screen, M.inv(segRel(a.seg, ease(p))))
     }
     if (p >= 1) anims.splice(i, 1)
     any = true

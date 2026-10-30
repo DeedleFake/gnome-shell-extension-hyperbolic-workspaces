@@ -282,8 +282,8 @@ const occupied = (s) => new Set(s.ws.map((w) => w.tile))
 function openWorkspace(T, s, tile) {
   const w = {id: s.nextId, tile}
   const raw = [...s.ws, w]
-  const {ws, fallbacks} = connect(T, {...s, ws: raw}, w.id)
-  const f = finish(T, {...s, ws: raw}, ws)
+  const {ws, fallbacks, via} = connect(T, {...s, ws: raw}, w.id)
+  const f = finish(T, {...s, ws: raw}, ws, via)
   return {...f, state: {...f.state, nextId: s.nextId + 1}, added: w, raw, fallbacks}
 }
 
@@ -333,8 +333,11 @@ function mapShape(T, tiles, from, to, turn) {
 }
 
 // Slide `piece` so it touches `main`, keeping its shape: try every tiling
-// symmetry that lands it on free tiles next to `main` and keep the one with the
-// least total travel (sum of hyperbolic distances each workspace moves).
+// symmetry that lands it on free tiles next to `main` and keep the one whose
+// farthest-moving workspace moves least, then the least total travel. Total
+// travel alone ties a one-tile slide of a row with turning the row about its
+// inner end, which sends the outer workspace over the inner one.
+// Returns the tile map and the symmetry G, as a frame relative to piece[0].
 function slidePiece(T, occ, main, piece) {
   const r = piece[0], own = new Set(piece), mainSet = new Set(main)
   // Frames of the piece's tiles relative to r, by walking the piece itself.
@@ -353,41 +356,50 @@ function slidePiece(T, occ, main, piece) {
       }
       if (!ok || !touches) continue
       const G = M.compose(Ft, M.rot((turn * Math.PI) / 2))
-      let cost = 0
-      for (const Fu of F.values()) cost += M.dist0(M.compose(M.inv(Fu), M.compose(G, Fu)))
-      if (cost < (best?.cost ?? Infinity) - 1e-9) best = {cost, img}
+      let far = 0, total = 0
+      for (const Fu of F.values()) {
+        const d = M.dist0(M.compose(M.inv(Fu), M.compose(G, Fu)))
+        far = Math.max(far, d); total += d
+      }
+      if (!best || far < best.far - 1e-9 || (far < best.far + 1e-9 && total < best.total - 1e-9)) best = {far, total, img, G}
     }
   }
-  return best?.img ?? null
+  return best && {img: best.img, root: r, G: best.G}
 }
 
 // Stay connected: while the group is split, the biggest piece stays put and the
 // next biggest slides over to touch it. Ties keep the piece without `mover`
 // (a dropped workspace), then the one on the center tile, then list order.
+// `via` maps each workspace that slid to its piece's motion: the piece's root
+// tile, the tile it slid from, and the symmetry G, so the whole piece can be
+// animated as one rigid body.
 function connect(T, s, mover = null) {
   let ws = s.ws
   let fallbacks = 0
+  const via = new Map()
   for (;;) {
     const comps = components(T, {...s, ws})
-    if (comps.length < 2) return {ws, fallbacks}
+    if (comps.length < 2) return {ws, fallbacks, via}
     const moverTile = ws.find((w) => w.id === mover)?.tile
     const rank = (c) => [-c.length, c.includes(moverTile) ? 1 : 0, c.includes(s.anchor) ? 0 : 1]
     const order = comps.map((c, i) => ({c, k: [...rank(c), i]})).sort((x, y) => cmp(x.k, y.k)).map((x) => x.c)
     const [main, piece] = order
     const occ = new Set(ws.map((w) => w.tile))
-    let img = slidePiece(T, occ, main, piece)
-    if (!img) {
+    const slid = slidePiece(T, occ, main, piece)
+    const img = new Map(), motion = new Map()
+    if (slid) for (const u of piece) { img.set(u, slid.img.get(u)); motion.set(u, slid) }
+    else {
       // No symmetry fits within reach: move them one at a time instead.
       fallbacks++
-      img = new Map()
       for (const u of piece) {
         occ.delete(u)
         const one = slidePiece(T, occ, main, [u])
-        img.set(u, one.get(u))
-        occ.add(one.get(u))
-        main.push(one.get(u))
+        img.set(u, one.img.get(u)); motion.set(u, one)
+        occ.add(one.img.get(u))
+        main.push(one.img.get(u))
       }
     }
+    for (const w of ws) if (img.has(w.tile)) via.set(w.id, {root: motion.get(w.tile).root, from: w.tile, G: motion.get(w.tile).G})
     ws = ws.map((w) => (img.has(w.tile) ? {...w, tile: img.get(w.tile)} : w))
   }
 }
@@ -408,17 +420,17 @@ function followCenter(T, ws, anchor) {
   }
 }
 
-function finish(T, s, ws) {
+function finish(T, s, ws, via = new Map()) {
   const before = new Map(s.ws.map((w) => [w.id, w.tile]))
-  const moves = ws.filter((w) => before.get(w.id) !== w.tile).map((w) => ({id: w.id, from: before.get(w.id), to: w.tile}))
+  const moves = ws.filter((w) => before.get(w.id) !== w.tile).map((w) => ({id: w.id, from: before.get(w.id), to: w.tile, via: via.get(w.id)}))
   return {state: {...s, ws, anchor: followCenter(T, ws, s.anchor)}, moves}
 }
 
 // Every way a workspace goes away ends here.
 function removeWorkspace(T, s, idx) {
   const raw = s.ws.filter((_, i) => i !== idx)
-  const {ws, fallbacks} = connect(T, {...s, ws: raw})
-  return {...finish(T, s, ws), removed: s.ws[idx], raw, fallbacks}
+  const {ws, fallbacks, via} = connect(T, {...s, ws: raw})
+  return {...finish(T, s, ws, via), removed: s.ws[idx], raw, fallbacks}
 }
 
 // Neighbor of `tile` that a drag entering it from `prev` crossed from: `prev`
@@ -452,8 +464,8 @@ function dropWorkspace(T, s, id, tile, from = null) {
     }
   }
   const raw = s.ws.map((x) => (to.has(x.id) ? {...x, tile: to.get(x.id)} : x))
-  const {ws, fallbacks} = connect(T, {...s, ws: raw}, id)
-  return {...finish(T, s, ws), landed: tile, chain, raw, fallbacks}
+  const {ws, fallbacks, via} = connect(T, {...s, ws: raw}, id)
+  return {...finish(T, s, ws, via), landed: tile, chain, raw, fallbacks}
 }
 
 const api = {C, M, wrapAngle, lerpFrame, Tiling, FILL_ORDERS, fillSequence, emptyState, openWorkspace, nearestFree, components, mapShape, connect, followCenter, removeWorkspace, entryTile, dropWorkspace}
