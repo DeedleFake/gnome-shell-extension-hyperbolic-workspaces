@@ -364,12 +364,13 @@ function appendEmpty() {
   anims.push({kind: "fade", w: {...r.added, wins: 0}, index: S.ws.length - 1, tile: r.added.tile, t0: now(), dur: 1})
 }
 
-// GNOME's dynamic workspaces: empty ones go away unless they are the last one
-// or the active one, and there is always exactly one empty workspace at the end.
+// Dynamic workspaces: an empty workspace goes away unless it is the last one, and
+// there is always exactly one empty workspace at the end. Unlike GNOME, the active
+// workspace gets no exception, so closing its last window regroups right away.
 function checkWorkspaces() {
   for (;;) {
     const last = S.ws.length - 1
-    const idx = S.ws.findIndex((w, i) => w.wins === 0 && i !== last && w.id !== active)
+    const idx = S.ws.findIndex((w, i) => w.wins === 0 && i !== last)
     if (idx === -1) break
     doRemove(idx)
   }
@@ -409,9 +410,10 @@ function doRemove(idx) {
   anims.push({kind: "fade", w: r.removed, index: idx, tile: r.removed.tile, t0: now(), dur: DUR})
   S = r.state
   report(`remove #${idx + 1}`, r)
+  const filler = S.ws.find((w) => w.tile === r.removed.tile)
+  const next = filler ?? S.ws[Math.min(idx, S.ws.length - 1)]
+  if (active === r.removed.id) active = next?.id ?? null
   if (wasFocused) {
-    const filler = S.ws.find((w) => w.tile === r.removed.tile)
-    const next = filler ?? S.ws[Math.min(idx, S.ws.length - 1)]
     focus = next ? {ws: next.id} : {tile: S.anchor}
     applyMoves(r.moves, {follow: false})
     if (next && !filler) later(() => goTo(next.tile), DUR * 0.3)
@@ -480,7 +482,7 @@ const RUN = {
   fill12: () => build(11),
   scCloseCenter: () => {
     build(11)
-    later(() => { focus = {ws: S.ws.find((w) => w.tile === S.anchor).id }; active = null; closeWindow(true) }, 400)
+    later(() => { setFocusTile(S.anchor); closeWindow(true) }, 400)
   },
 }
 
