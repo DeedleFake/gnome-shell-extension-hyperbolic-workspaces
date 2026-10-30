@@ -4,7 +4,7 @@
 // overlaps, no lost workspaces, and nothing moves except the insert chain, a
 // newly opened far workspace, and pieces that were cut off (each sliding as one
 // rigid shape).
-const {Tiling, emptyState, openWorkspace, removeWorkspace, dropWorkspace, components} = require("./hyper.js")
+const {Tiling, emptyState, openWorkspace, removeWorkspace, dropWorkspace, components, mapShape} = require("./hyper.js")
 const T = new Tiling(4, 5)
 const OPS = +(process.argv[2] ?? 5000)
 const SEED = +(process.argv[3] ?? 7)
@@ -22,7 +22,23 @@ function checkGroup(s, what) {
   if (s.ws.length && !tiles.includes(s.anchor)) fail(`${what}: center tile has no windows`, {anchor: s.anchor, tiles})
 }
 
-// raw -> final may move only pieces cut off from some biggest piece, each rigidly.
+// Some turn of the tiling symmetry that takes c[0] to `to` sends every member to `dest`'s tile.
+const rigidImage = (c, to, dest) => [0, 1, 2, 3].some((turn) => { const img = mapShape(T, c, c[0], to, turn); return c.every((u) => img.get(u) === dest(u)) })
+
+// Symmetries that move every member of `c` to an edge-adjacent tile and leave it
+// on free tiles touching the rest of the group.
+function oneStepSlides(c, others) {
+  const out = []
+  for (const n of T.neighbors(c[0])) for (let turn = 0; turn < 4; turn++) {
+    const img = mapShape(T, c, c[0], n, turn)
+    if (c.every((u) => adjacent(u, img.get(u)) && !others.has(img.get(u))) && c.some((u) => T.neighbors(img.get(u)).some((x) => others.has(x)))) out.push(img)
+  }
+  return out
+}
+
+// raw -> final may move only pieces cut off from some biggest piece, each as the
+// rigid image of its own tiles under one orientation-preserving tiling symmetry.
+// With exactly two pieces, a one-tile slide wins whenever one reconnects them.
 function checkRejoin(raw, final, what) {
   const before = tilesOf(raw), after = tilesOf(final)
   if (before.size !== after.size || [...before.keys()].some((id) => !after.has(id))) fail(`${what}: lost a workspace`)
@@ -34,6 +50,16 @@ function checkRejoin(raw, final, what) {
   if (!comps.some((c) => c.length === big && still(c))) fail(`${what}: a biggest piece moved`)
   for (const c of comps) {
     const ids = c.map((t) => byTile.get(t))
+    const dest = (u) => after.get(byTile.get(u))
+    if (!still(c)) {
+      if (!rigidImage(c, dest(c[0]), dest)) fail(`${what}: a piece moved but not as one rigid block`, {c, to: c.map(dest)})
+      if (comps.length === 2) {
+        const others = new Set(comps.find((x) => x !== c))
+        const slides = oneStepSlides(c, others)
+        if (slides.length && !slides.some((img) => c.every((u) => img.get(u) === dest(u)))) fail(`${what}: a one-tile slide was possible but not chosen`, {c, to: c.map(dest)})
+        if (slides.length) st.oneStep++
+      }
+    }
     for (const a of ids) for (const b of ids)
       if (a < b && adjacent(before.get(a), before.get(b)) !== adjacent(after.get(a), after.get(b))) fail(`${what}: a piece changed shape`, {fb: final.fallbacks, c, a, b, ba: before.get(a), bb: before.get(b), aa: after.get(a), ab: after.get(b)})
   }
@@ -41,7 +67,7 @@ function checkRejoin(raw, final, what) {
 }
 
 let s = emptyState()
-const st = {opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0, centerMoves: 0}
+const st = {opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0, centerMoves: 0, oneStep: 0}
 const t0 = Date.now()
 for (let i = 0; i < OPS; i++) {
   const x = rnd()
@@ -106,4 +132,5 @@ for (let i = 0; i < OPS; i++) {
 console.log(`## Stay connected, ${OPS} random ops, seed ${SEED} (40% open a first window on a free tile within 5 of the group, 30% close the last window, 30% drag within 5 tiles; up to 30 workspaces), ${Date.now() - t0} ms`)
 console.log(`opens ${st.opens} (${st.joined} away from the group slid over to join it; ${st.firstAway} first windows on an empty plane, where the center moved to them), closes ${st.removes} (${st.splits} split the group; ${st.slidRem} workspaces slid, most in one close ${st.maxPiece})`)
 console.log(`drops ${st.drops}: ${st.far} on empty tiles (${st.slidBack} slid back to the group), ${st.inserts} inserts (avg chain ${(st.chainSum / Math.max(1, st.inserts)).toFixed(2)}, max ${st.chainMax}); ${st.dropSplits} drops split the rest`)
+console.log(`${st.oneStep} two-piece splits had a one-tile slide, and took it`)
 console.log(`center moved ${st.centerMoves} times; fallbacks to one-at-a-time ${st.fallbacks}; max workspaces ${st.maxN}; every check passed`)
