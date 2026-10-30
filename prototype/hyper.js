@@ -269,21 +269,22 @@ function fillSequence(T, anchor, order, count, exclude = new Set()) {
 }
 
 // Placement state: `ws` holds the workspaces that have windows, in the order
-// their first window opened. The center (anchor) is the origin tile.
+// their first window opened. The center (anchor) starts on the origin tile and
+// follows the group (see followCenter).
 function emptyState() {
   return {anchor: 0, ws: [], nextId: 1}
 }
 
 const occupied = (s) => new Set(s.ws.map((w) => w.tile))
 
-// Every tile is a workspace; only tiles with windows are in `ws`. The center
-// is the origin tile. Opening the first window on an empty tile adds it; one
+// Every tile is a workspace; only tiles with windows are in `ws`. Opening the first window on an empty tile adds it; one
 // that doesn't touch the group slides over to the nearest tile that does.
 function openWorkspace(T, s, tile) {
   const w = {id: s.nextId, tile}
   const raw = [...s.ws, w]
   const {ws, fallbacks} = connect(T, {...s, ws: raw}, w.id)
-  return {...finish({...s, ws: raw}, ws, s.anchor), state: {...s, ws, nextId: s.nextId + 1}, added: w, raw, fallbacks}
+  const f = finish(T, {...s, ws: raw}, ws)
+  return {...f, state: {...f.state, nextId: s.nextId + 1}, added: w, raw, fallbacks}
 }
 
 // Free tile touching the group nearest the center (the center if the group is empty).
@@ -391,17 +392,33 @@ function connect(T, s, mover = null) {
   }
 }
 
-function finish(s, ws, anchor) {
+// The center follows the group: when its tile has no windows but some tile
+// does, it moves to the nearest such tile by edge steps. Ties go to the oldest
+// workspace (first in `ws`). With no windows anywhere it stays put.
+function followCenter(T, ws, anchor) {
+  const age = new Map(ws.map((w, i) => [w.tile, i]))
+  if (!ws.length || age.has(anchor)) return anchor
+  const seen = new Set([anchor])
+  for (let ring = [anchor]; ; ) {
+    const next = []
+    for (const t of ring) for (const n of T.neighbors(t)) if (!seen.has(n)) { seen.add(n); next.push(n) }
+    const hits = next.filter((t) => age.has(t))
+    if (hits.length) return hits.reduce((a, b) => (age.get(a) < age.get(b) ? a : b))
+    ring = next
+  }
+}
+
+function finish(T, s, ws) {
   const before = new Map(s.ws.map((w) => [w.id, w.tile]))
   const moves = ws.filter((w) => before.get(w.id) !== w.tile).map((w) => ({id: w.id, from: before.get(w.id), to: w.tile}))
-  return {state: {...s, ws, anchor}, moves}
+  return {state: {...s, ws, anchor: followCenter(T, ws, s.anchor)}, moves}
 }
 
 // Every way a workspace goes away ends here.
 function removeWorkspace(T, s, idx) {
   const raw = s.ws.filter((_, i) => i !== idx)
   const {ws, fallbacks} = connect(T, {...s, ws: raw})
-  return {...finish(s, ws, s.anchor), removed: s.ws[idx], raw, fallbacks}
+  return {...finish(T, s, ws), removed: s.ws[idx], raw, fallbacks}
 }
 
 // Neighbor of `tile` that a drag entering it from `prev` crossed from: `prev`
@@ -420,7 +437,7 @@ function entryTile(T, tile, prev) {
 // off on its own.
 function dropWorkspace(T, s, id, tile, from = null) {
   const w = s.ws.find((x) => x.id === id)
-  if (tile === w.tile) return {...finish(s, s.ws, s.anchor), landed: tile, chain: [], raw: s.ws, fallbacks: 0}
+  if (tile === w.tile) return {...finish(T, s, s.ws), landed: tile, chain: [], raw: s.ws, fallbacks: 0}
   const at = new Map(s.ws.filter((x) => x.id !== id).map((x) => [x.tile, x]))
   const to = new Map([[id, tile]])
   const chain = []
@@ -436,10 +453,10 @@ function dropWorkspace(T, s, id, tile, from = null) {
   }
   const raw = s.ws.map((x) => (to.has(x.id) ? {...x, tile: to.get(x.id)} : x))
   const {ws, fallbacks} = connect(T, {...s, ws: raw}, id)
-  return {...finish(s, ws, s.anchor), landed: tile, chain, raw, fallbacks}
+  return {...finish(T, s, ws), landed: tile, chain, raw, fallbacks}
 }
 
-const api = {C, M, wrapAngle, lerpFrame, Tiling, FILL_ORDERS, fillSequence, emptyState, openWorkspace, nearestFree, components, mapShape, connect, removeWorkspace, entryTile, dropWorkspace}
+const api = {C, M, wrapAngle, lerpFrame, Tiling, FILL_ORDERS, fillSequence, emptyState, openWorkspace, nearestFree, components, mapShape, connect, followCenter, removeWorkspace, entryTile, dropWorkspace}
 if (typeof module !== 'undefined') module.exports = api
 else root.Hyper = api
 })(this)

@@ -1,3 +1,14 @@
+# Round 4: center follows the group
+
+## Stay connected, 2000 random ops, seed 1 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 30% drag within 5 tiles; up to 30 workspaces), 73330 ms
+opens 727 (646 away from the group slid over to join it; 5 first windows on an empty plane, where the center moved to them), closes 702 (374 split the group; 1112 workspaces slid, most in one close 18)
+drops 571: 247 on empty tiles (223 slid back to the group), 324 inserts (avg chain 1.88, max 7); 385 drops split the rest
+center moved 41 times; fallbacks to one-at-a-time 0; max workspaces 30; every check passed
+## Stay connected, 2000 random ops, seed 7 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 30% drag within 5 tiles; up to 30 workspaces), 44342 ms
+opens 706 (628 away from the group slid over to join it; 3 first windows on an empty plane, where the center moved to them), closes 676 (327 split the group; 936 workspaces slid, most in one close 16)
+drops 618: 276 on empty tiles (250 slid back to the group), 342 inserts (avg chain 1.90, max 5); 421 drops split the rest
+center moved 45 times; fallbacks to one-at-a-time 0; max workspaces 30; every check passed
+
 # Round 3: stay connected, insert drag, every tile a workspace
 
 ## Stay connected, 5000 random ops, seed 7 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 30% drag within 5 tiles; up to 30 workspaces), 94937 ms

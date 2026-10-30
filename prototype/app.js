@@ -201,6 +201,12 @@ function draw() {
       if (F) drawWorkspace(F, a.w, 1 - p)
     }
   }
+  const cF = vis.get(S.anchor)
+  if (cF) {
+    const [x, y] = toScreen(M.center(cF))
+    ctx.beginPath(); ctx.arc(x, y, R * (1 - C.abs2(M.center(cF))) * 0.05, 0, 2 * Math.PI)
+    ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.stroke()
+  }
   const fTile = focusTile()
   const fF = fTile !== null ? vis.get(fTile) ?? null : null
   if (fF) { path(fF, boundary); ctx.lineWidth = 3; ctx.strokeStyle = "#7fb6ff"; ctx.stroke() }
@@ -360,8 +366,11 @@ function later(fn, ms) {
   timers.add(id)
 }
 
+let loggedCenter = 0
 function report(what, r) {
-  log(`${what}: moved ${r.moves.length}, pieces ${components(T, r.state).length}, tiles ${r.state.ws.map((w) => w.tile).join(",")}`)
+  const center = r.state.anchor !== loggedCenter ? `, center moved to tile ${r.state.anchor}` : ""
+  loggedCenter = r.state.anchor
+  log(`${what}: moved ${r.moves.length}${center}, pieces ${components(T, r.state).length}, tiles ${r.state.ws.map((w) => w.tile).join(",")}`)
 }
 
 // Every tile is a workspace. The first window on an empty tile makes it part of
@@ -463,6 +472,7 @@ function build(n) {
     S = {...r.state, ws: r.state.ws.map((x) => (x.id === r.added.id ? {...x, wins: 1 + ((x.id * 7) % 3)} : x))}
   }
   active = S.anchor
+  loggedCenter = S.anchor
   focus = S.ws.length ? {ws: S.ws[0].id} : {tile: S.anchor}
   kick()
 }

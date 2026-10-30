@@ -1,6 +1,6 @@
 // Random churn under the stay-connected rule: open a first window on a random
 // tile, close a workspace's last window, drag. Checks after every operation, from
-// the outside: one connected group, no
+// the outside: one connected group, the center on a tile with windows, no
 // overlaps, no lost workspaces, and nothing moves except the insert chain, a
 // newly opened far workspace, and pieces that were cut off (each sliding as one
 // rigid shape).
@@ -19,6 +19,7 @@ function checkGroup(s, what) {
   const tiles = s.ws.map((w) => w.tile)
   if (new Set(tiles).size !== tiles.length) fail(`${what}: two workspaces on one tile`, tiles)
   if (s.ws.length && components(T, s).length !== 1) fail(`${what}: group is split`, tiles)
+  if (s.ws.length && !tiles.includes(s.anchor)) fail(`${what}: center tile has no windows`, {anchor: s.anchor, tiles})
 }
 
 // raw -> final may move only pieces cut off from some biggest piece, each rigidly.
@@ -40,11 +41,12 @@ function checkRejoin(raw, final, what) {
 }
 
 let s = emptyState()
-const st = {opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0}
+const st = {opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0, centerMoves: 0}
 const t0 = Date.now()
 for (let i = 0; i < OPS; i++) {
   const x = rnd()
   const before = tilesOf(s.ws)
+  const anchorBefore = s.anchor
   if (s.ws.length < 1 || (s.ws.length < 30 && x < 0.4)) {
     const occ = new Set(s.ws.map((v) => v.tile))
     const near = s.ws.length ? [...T.rings(pick(s.ws).tile, 5).keys()] : [...T.rings(0, 4).keys()]
@@ -54,7 +56,7 @@ for (let i = 0; i < OPS; i++) {
     if (r.moves.some((m) => m.id !== r.added.id)) fail("opening moved another workspace")
     const got = r.state.ws.find((v) => v.id === r.added.id).tile
     if ((touching || !s.ws.length) && got !== tile) fail("opened workspace moved although it needed no rejoin")
-    if (!s.ws.length && tile !== 0) st.firstAway++
+    if (!s.ws.length && tile !== s.anchor) st.firstAway++
     if (got !== tile) st.joined++
     checkRejoin(r.raw, r.state.ws, "open")
     s = r.state; st.opens++
@@ -98,9 +100,10 @@ for (let i = 0; i < OPS; i++) {
     s = r.state
   }
   checkGroup(s, `op ${i}`)
+  if (s.anchor !== anchorBefore) st.centerMoves++
   st.maxN = Math.max(st.maxN, s.ws.length)
 }
 console.log(`## Stay connected, ${OPS} random ops, seed ${SEED} (40% open a first window on a free tile within 5 of the group, 30% close the last window, 30% drag within 5 tiles; up to 30 workspaces), ${Date.now() - t0} ms`)
-console.log(`opens ${st.opens} (${st.joined} away from the group slid over to join it; ${st.firstAway} first windows on an empty plane stayed off-center), closes ${st.removes} (${st.splits} split the group; ${st.slidRem} workspaces slid, most in one close ${st.maxPiece})`)
+console.log(`opens ${st.opens} (${st.joined} away from the group slid over to join it; ${st.firstAway} first windows on an empty plane, where the center moved to them), closes ${st.removes} (${st.splits} split the group; ${st.slidRem} workspaces slid, most in one close ${st.maxPiece})`)
 console.log(`drops ${st.drops}: ${st.far} on empty tiles (${st.slidBack} slid back to the group), ${st.inserts} inserts (avg chain ${(st.chainSum / Math.max(1, st.inserts)).toFixed(2)}, max ${st.chainMax}); ${st.dropSplits} drops split the rest`)
-console.log(`fallbacks to one-at-a-time ${st.fallbacks}; max workspaces ${st.maxN}; every check passed`)
+console.log(`center moved ${st.centerMoves} times; fallbacks to one-at-a-time ${st.fallbacks}; max workspaces ${st.maxN}; every check passed`)
