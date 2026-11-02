@@ -430,12 +430,6 @@ function draw() {
       if (F) drawWorkspace(content(F, a.w), a.w, 1 - p)
     }
   }
-  const cF = vis.get(S.anchor)
-  if (cF) {
-    const [x, y] = toScreen(M.center(cF))
-    ctx.beginPath(); ctx.arc(x, y, R * (1 - C.abs2(M.center(cF))) * 0.05, 0, 2 * Math.PI)
-    ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.stroke()
-  }
   const fTile = focusTile()
   const fF = fTile !== null ? vis.get(fTile) ?? null : null
   if (fF) { path(fF, boundary); ctx.lineWidth = 3; ctx.strokeStyle = "#7fb6ff"; ctx.stroke() }
