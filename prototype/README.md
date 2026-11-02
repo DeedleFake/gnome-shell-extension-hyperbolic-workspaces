@@ -1,5 +1,7 @@
 Browser prototype of the {4,5} hyperbolic workspace layout. No build step or server: run `xdg-open prototype/index.html` from the repo root.
 
+Live demo: https://deedlefake.github.io/gnome-shell-extension-hyperbolic-workspaces/
+
 Every tile is a workspace. The colored ones have windows and form one connected group; the rest are empty and look like the bare grid.
 
 Controls:
