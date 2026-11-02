@@ -82,8 +82,50 @@ function checkRejoin(raw, final, what) {
   return comps.length > 1
 }
 
+// No spin: each moved workspace's down edge must be the image of its old one
+// under the motion. Stage one is a push one tile straight on (an insert
+// chain), whose motion is the slide to the neighbor, or a drop, which may turn
+// to the nearest edge (at most 45 deg); stage two is its piece's slide G.
+// The content frame carried by the motion has to equal the new tile's frame
+// turned by the new down: no leftover turn, no offset. `was` counts how often
+// windows turned when they took the new tile's own frame (down always 0).
+const qr = (q) => M.rot((q * Math.PI) / 2)
+function leftover(D, from, q0, to, q1) {
+  const rel = T.relFrame(from, to, 10)
+  if (!rel) return null
+  const X = M.compose(M.inv(M.compose(D, qr(q0))), M.compose(rel, qr(q1)))
+  return {off: M.dist0(X), turn: Math.abs(wrapAngle(M.split(X).alpha))}
+}
+function checkDown(prev, r, what, dropped = null) {
+  const old = new Map(prev.ws.map((w) => [w.id, w]))
+  const moved = new Map(r.moves.map((m) => [m.id, m]))
+  for (const w of r.state.ws) {
+    if (![0, 1, 2, 3].includes(w.down)) fail(`${what}: bad down`, w)
+    if (!moved.has(w.id) && old.has(w.id) && old.get(w.id).tile === w.tile && old.get(w.id).down !== w.down) fail(`${what}: down changed without a move`, w)
+  }
+  for (const m of r.moves) {
+    const stages = []
+    const mid = m.via ? m.via.from : m.to, qMid = m.via ? m.via.down : m.down[1]
+    if (mid !== m.from) stages.push({kind: m.id === dropped ? "drop" : "push", from: m.from, q0: m.down[0], to: mid, q1: qMid})
+    else if (qMid !== m.down[0]) fail(`${what}: down changed before the slide`, m)
+    if (m.via) stages.push({kind: "slide", from: mid, q0: qMid, to: m.to, q1: m.down[1]})
+    for (const g of stages) {
+      let D
+      if (g.kind === "slide") { const Fu = T.relFrame(m.via.root, g.from, 10); if (!Fu) { st.downFar++; continue } D = M.compose(M.inv(Fu), M.compose(m.via.G, Fu)) }
+      else { const rel = T.relFrame(g.from, g.to, 10); if (!rel) { st.downFar++; continue } D = M.to(M.center(rel)) }
+      const now = leftover(D, g.from, g.q0, g.to, g.q1), was = leftover(D, g.from, 0, g.to, 0)
+      if (!now) { st.downFar++; continue }
+      if (now.off > 1e-6) fail(`${what}: ${g.kind} landed off its tile`, {m, now})
+      if (g.kind === "drop") { if (now.turn > Math.PI / 4 + 1e-6) fail(`${what}: drop turned more than 45 deg`, {m, now}); st.drops2++; continue }
+      st[g.kind + "s2"]++
+      if (now.turn > 1e-6) fail(`${what}: windows spun on a ${g.kind}`, {m, turn: now.turn})
+      if (was.turn > 1e-6) st[g.kind + "Was"]++
+    }
+  }
+}
+
 let s = emptyState()
-const st = {opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0, centerMoves: 0, oneStep: 0, winMoves: 0, winLast: 0, winNew: 0, winSplits: 0, pieces: 0, pieceTiles: 0, offAxis: 0, offAxisLone: 0, maxBend: 0}
+const st = {downFar: 0, drops2: 0, slides2: 0, pushs2: 0, slideWas: 0, pushWas: 0, opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0, centerMoves: 0, oneStep: 0, winMoves: 0, winLast: 0, winNew: 0, winSplits: 0, pieces: 0, pieceTiles: 0, offAxis: 0, offAxisLone: 0, maxBend: 0}
 const t0 = Date.now()
 for (let i = 0; i < OPS; i++) {
   const x = rnd()
@@ -93,7 +135,8 @@ for (let i = 0; i < OPS; i++) {
     const occ = new Set(s.ws.map((v) => v.tile))
     const near = s.ws.length ? [...T.rings(pick(s.ws).tile, 5).keys()] : [...T.rings(0, 4).keys()]
     const tile = pick(near.filter((t) => !occ.has(t)))
-    const r = openWorkspace(T, s, tile)
+    const r = openWorkspace(T, s, tile, (i * 3 + tile) % 4)
+    checkDown(s, r, "open")
     const touching = T.neighbors(tile).some((n) => occ.has(n))
     if (r.moves.some((m) => m.id !== r.added.id)) fail("opening moved another workspace")
     const got = r.state.ws.find((v) => v.id === r.added.id).tile
@@ -104,6 +147,7 @@ for (let i = 0; i < OPS; i++) {
     s = r.state; st.opens++
   } else if (x < 0.7) {
     const r = removeWorkspace(T, s, Math.floor(rnd() * s.ws.length))
+    checkDown(s, r, "remove")
     const split = checkRejoin(r.raw, Object.assign(r.state.ws, {fallbacks: r.fallbacks}), "remove")
     if (!split && r.moves.length) fail("remove moved something without a split")
     st.removes++; st.fallbacks += r.fallbacks
@@ -114,7 +158,8 @@ for (let i = 0; i < OPS; i++) {
     const occ = new Set(s.ws.map((v) => v.tile))
     const ring = [...T.rings(w.tile, 5)].filter(([, d]) => d > 0).map(([t]) => t)
     const target = rnd() < 0.5 ? pick(ring.filter((t) => occ.has(t))) ?? pick(ring) : pick(ring)
-    const r = moveWindow(T, s, w.id, target, last)
+    const r = moveWindow(T, s, w.id, target, last, (i * 3 + target) % 4)
+    checkDown(s, r, "move window")
     const ids = new Set(r.state.ws.map((v) => v.id))
     if (r.state.ws.length !== s.ws.length - (last ? 1 : 0) + (occ.has(target) ? 0 : 1)) fail("move window: wrong workspace count")
     if (last === ids.has(w.id)) fail("move window: the source should leave exactly when it lost its last window")
@@ -132,6 +177,7 @@ for (let i = 0; i < OPS; i++) {
     const target = rnd() < 0.5 ? pick(ring.filter((t) => occ.has(t))) ?? pick(ring) : pick(ring)
     const from = pick(T.neighbors(target))
     const r = dropWorkspace(T, s, w.id, target, from)
+    checkDown(s, r, "drop", w.id)
     st.drops++; st.fallbacks += r.fallbacks
     // raw: only the chain moved, each one tile on, in a straight line from `from`.
     const rawT = tilesOf(r.raw)
@@ -166,4 +212,6 @@ console.log(`opens ${st.opens} (${st.joined} away from the group slid over to jo
 console.log(`drops ${st.drops}: ${st.far} on empty tiles (${st.slidBack} slid back to the group), ${st.inserts} inserts (avg chain ${(st.chainSum / Math.max(1, st.inserts)).toFixed(2)}, max ${st.chainMax}); ${st.dropSplits} drops split the rest`)
 console.log(`window moves ${st.winMoves}: ${st.winLast} took the source's last window, ${st.winNew} opened an empty tile; ${st.winSplits} split the group`)
 console.log(`${st.pieces} cut-off pieces moved (${st.pieceTiles} workspaces), each by one slide with no turn (${st.offAxis} along an axis that misses the piece, because no straight slide fit; ${st.offAxisLone} of them lone workspaces; most turn against moving straight ${st.maxBend.toFixed(1)} deg); ${st.oneStep} two-piece splits had a one-tile slide, and took it`)
+const pct = (a, b) => `${(100 * a / Math.max(1, b)).toFixed(1)}%`
+console.log(`down edges: ${st.slides2} slides with a piece and ${st.pushs2} insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on ${st.slideWas} slides (${pct(st.slideWas, st.slides2)}) and ${st.pushWas} pushes (${pct(st.pushWas, st.pushs2)}), ${pct(st.slideWas + st.pushWas, st.slides2 + st.pushs2)} overall; ${st.drops2} drops turned at most 45 deg to the nearest edge; ${st.downFar} stages too far to check`)
 console.log(`center moved ${st.centerMoves} times; fallbacks to one-at-a-time ${st.fallbacks}; max workspaces ${st.maxN}; every check passed`)

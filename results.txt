@@ -184,3 +184,25 @@ first 17 tiles: 4/20 adjacent pairs whose upright frames disagree with walking s
 first 41 tiles: 12/52 adjacent pairs whose upright frames disagree with walking straight across the edge
 PERF real clock, 12 workspaces: 9.13 ms per frame, 1641 tiles drawn (headless Chrome, canvas 2D, software)
 PERF real clock, 40 workspaces: 11.01 ms per frame, 1641 tiles drawn (headless Chrome, canvas 2D, software)
+
+## Stay connected, 2000 random ops, seed 1 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 189305 ms
+opens 719 (640 away from the group slid over to join it; 4 first windows on an empty plane, where the center moved to them), closes 681 (369 split the group; 1331 workspaces slid, most in one close 15)
+drops 302: 127 on empty tiles (115 slid back to the group), 175 inserts (avg chain 1.97, max 7); 209 drops split the rest
+window moves 298: 160 took the source's last window, 145 opened an empty tile; 184 split the group
+1590 cut-off pieces moved (3067 workspaces), each by one slide with no turn (106 along an axis that misses the piece, because no straight slide fit; 106 of them lone workspaces; most turn against moving straight 41.8 deg); 358 two-piece splits had a one-tile slide, and took it
+down edges: 3047 slides with a piece and 345 insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on 1292 slides (42.4%) and 36 pushes (10.4%), 39.2% overall; 282 drops turned at most 45 deg to the nearest edge; 0 stages too far to check
+center moved 49 times; fallbacks to one-at-a-time 0; max workspaces 32; every check passed
+## Stay connected, 2000 random ops, seed 7 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 182556 ms
+opens 712 (652 away from the group slid over to join it; 2 first windows on an empty plane, where the center moved to them), closes 675 (323 split the group; 1075 workspaces slid, most in one close 15)
+drops 307: 126 on empty tiles (117 slid back to the group), 181 inserts (avg chain 1.82, max 5); 212 drops split the rest
+window moves 306: 150 took the source's last window, 142 opened an empty tile; 181 split the group
+1537 cut-off pieces moved (2747 workspaces), each by one slide with no turn (112 along an axis that misses the piece, because no straight slide fit; 112 of them lone workspaces; most turn against moving straight 41.8 deg); 337 two-piece splits had a one-tile slide, and took it
+down edges: 2721 slides with a piece and 326 insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on 1148 slides (42.2%) and 59 pushes (18.1%), 39.6% overall; 286 drops turned at most 45 deg to the nearest edge; 1 stages too far to check
+center moved 38 times; fallbacks to one-at-a-time 0; max workspaces 31; every check passed
+## Stay connected, 2000 random ops, seed 11 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 163150 ms
+opens 719 (653 away from the group slid over to join it; 1 first windows on an empty plane, where the center moved to them), closes 703 (383 split the group; 1171 workspaces slid, most in one close 13)
+drops 299: 146 on empty tiles (127 slid back to the group), 153 inserts (avg chain 2.05, max 6); 204 drops split the rest
+window moves 279: 119 took the source's last window, 123 opened an empty tile; 155 split the group
+1566 cut-off pieces moved (2854 workspaces), each by one slide with no turn (127 along an axis that misses the piece, because no straight slide fit; 127 of them lone workspaces; most turn against moving straight 41.8 deg); 367 two-piece splits had a one-tile slide, and took it
+down edges: 2823 slides with a piece and 312 insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on 1126 slides (39.9%) and 30 pushes (9.6%), 36.9% overall; 269 drops turned at most 45 deg to the nearest edge; 0 stages too far to check
+center moved 40 times; fallbacks to one-at-a-time 0; max workspaces 32; every check passed

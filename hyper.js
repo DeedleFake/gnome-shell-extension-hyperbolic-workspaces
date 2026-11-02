@@ -297,8 +297,12 @@ const occupied = (s) => new Set(s.ws.map((w) => w.tile))
 
 // Every tile is a workspace; only tiles with windows are in `ws`. Opening the first window on an empty tile adds it; one
 // that doesn't touch the group slides over to the nearest tile that does.
-function openWorkspace(T, s, tile) {
-  const w = {id: s.nextId, tile}
+// A workspace's `down` (0-3) is its content frame: the tile's frame turned by
+// that many quarter turns. Its windows live in that flat frame, so whatever
+// moves the workspace carries `down` along and its windows never spin. A new
+// one starts with `down` (the caller picks the edge drawn nearest the bottom).
+function openWorkspace(T, s, tile, down = 0) {
+  const w = {id: s.nextId, tile, down}
   const raw = [...s.ws, w]
   const {ws, fallbacks, via} = connect(T, {...s, ws: raw}, w.id)
   const f = finish(T, {...s, ws: raw}, ws, via)
@@ -332,7 +336,9 @@ function components(T, s) {
 
 // Image of `tiles` under the tiling symmetry that sends `from` to `to` and
 // edge k of `from` to edge (k + turn) % 4 of `to`. Exact: it only follows links.
-function mapShape(T, tiles, from, to, turn) {
+// With `turns`, it also gets, for each tile u, the o with edge k of u going to
+// edge (k + o) % 4 of u's image, which is how a down edge rides the symmetry.
+function mapShape(T, tiles, from, to, turn, turns = null) {
   const set = new Set(tiles)
   const img = new Map([[from, [to, turn]]])
   const queue = [from]
@@ -347,6 +353,7 @@ function mapShape(T, tiles, from, to, turn) {
       queue.push(n)
     }
   }
+  if (turns) for (const [u, [, o]] of img) turns.set(u, o)
   return new Map([...img].map(([u, [t]]) => [u, t]))
 }
 
@@ -374,7 +381,7 @@ function slidePiece(T, occ, main, piece) {
     for (let turn = 0; turn < 4; turn++) {
       const G = M.compose(Ft, M.rot((turn * Math.PI) / 2))
       if (!M.isSlide(G)) continue
-      const img = mapShape(T, piece, r, t, turn)
+      const turns = new Map(), img = mapShape(T, piece, r, t, turn, turns)
       let ok = true, touches = false
       for (const v of img.values()) {
         if (occ.has(v) && !own.has(v)) { ok = false; break }
@@ -390,18 +397,18 @@ function slidePiece(T, occ, main, piece) {
         if (a < 1e-6) straight = true
       }
       const key = [straight ? 0 : 1, far, total, bend]
-      if (!best || cmpTol(key, best.key) < 0) best = {key, img, G}
+      if (!best || cmpTol(key, best.key) < 0) best = {key, img, turns, G}
     }
   }
-  return best && {img: best.img, root: r, G: best.G}
+  return best && {img: best.img, turns: best.turns, root: r, G: best.G}
 }
 
 // Stay connected: while the group is split, the biggest piece stays put and the
 // next biggest slides over to touch it. Ties keep the piece without `mover`
 // (a dropped workspace), then the one on the center tile, then list order.
 // `via` maps each workspace that slid to its piece's motion: the piece's root
-// tile, the tile it slid from, and the symmetry G, so the whole piece can be
-// animated as one rigid body.
+// tile, the tile it slid from, its down edge there, and the symmetry G, so the
+// whole piece can be animated as one rigid body. Its down edge rides G.
 function connect(T, s, mover = null) {
   let ws = s.ws
   let fallbacks = 0
@@ -428,8 +435,8 @@ function connect(T, s, mover = null) {
         main.push(one.img.get(u))
       }
     }
-    for (const w of ws) if (img.has(w.tile)) via.set(w.id, {root: motion.get(w.tile).root, from: w.tile, G: motion.get(w.tile).G})
-    ws = ws.map((w) => (img.has(w.tile) ? {...w, tile: img.get(w.tile)} : w))
+    for (const w of ws) if (img.has(w.tile)) via.set(w.id, {root: motion.get(w.tile).root, from: w.tile, down: w.down, G: motion.get(w.tile).G})
+    ws = ws.map((w) => (img.has(w.tile) ? {...w, tile: img.get(w.tile), down: (w.down + motion.get(w.tile).turns.get(w.tile)) % 4} : w))
   }
 }
 
@@ -451,7 +458,10 @@ function followCenter(T, ws, anchor) {
 
 function finish(T, s, ws, via = new Map()) {
   const before = new Map(s.ws.map((w) => [w.id, w.tile]))
-  const moves = ws.filter((w) => before.get(w.id) !== w.tile).map((w) => ({id: w.id, from: before.get(w.id), to: w.tile, via: via.get(w.id)}))
+  const down = new Map(s.ws.map((w) => [w.id, w.down]))
+  // A workspace that ends on its own tile can still have turned there (a drop
+  // that slid back home); that is a move too.
+  const moves = ws.filter((w) => before.get(w.id) !== w.tile || (before.has(w.id) && down.get(w.id) !== w.down)).map((w) => ({id: w.id, from: before.get(w.id), to: w.tile, down: [down.get(w.id), w.down], via: via.get(w.id)}))
   return {state: {...s, ws, anchor: followCenter(T, ws, s.anchor)}, moves}
 }
 
@@ -465,9 +475,9 @@ function removeWorkspace(T, s, idx) {
 // Move one window from workspace `id` to `tile`. With `last`, it was the
 // source's last window and the source leaves the group; an empty target joins
 // it. Then the group is reconnected as for any open or close.
-function moveWindow(T, s, id, tile, last) {
+function moveWindow(T, s, id, tile, last, down = 0) {
   const src = s.ws.find((x) => x.id === id)
-  const added = s.ws.some((x) => x.tile === tile) ? null : {id: s.nextId, tile}
+  const added = s.ws.some((x) => x.tile === tile) ? null : {id: s.nextId, tile, down}
   const raw = [...s.ws.filter((x) => !(last && x.id === id)), ...(added ? [added] : [])]
   const {ws, fallbacks, via} = connect(T, {...s, ws: raw}, added?.id ?? null)
   const f = finish(T, {...s, ws: raw}, ws, via)
@@ -487,29 +497,44 @@ function entryTile(T, tile, prev) {
 // in a straight line (in at one edge, out the opposite one) shift one tile on,
 // up to the first empty tile, which may be the one the dragged workspace left.
 // Then the group is reconnected, with the dropped one sliding back if it is
-// off on its own.
-function dropWorkspace(T, s, id, tile, from = null) {
+// off on its own. Each pushed workspace slides one tile straight on, a
+// tiling symmetry, and its down edge rides it. The dropped one lands with
+// `down` (the caller picks the edge nearest to how it was drawn while
+// dragged); by default, the edge nearest its old one carried straight over.
+function dropWorkspace(T, s, id, tile, from = null, down = null) {
   const w = s.ws.find((x) => x.id === id)
-  if (tile === w.tile) return {...finish(T, s, s.ws), landed: tile, chain: [], raw: s.ws, fallbacks: 0}
+  if (tile === w.tile) return {...finish(T, s, s.ws), landed: tile, landedDown: w.down, chain: [], raw: s.ws, fallbacks: 0}
+  down ??= carryDown(T, w.tile, w.down, tile)
   const at = new Map(s.ws.filter((x) => x.id !== id).map((x) => [x.tile, x]))
-  const to = new Map([[id, tile]])
+  const to = new Map([[id, [tile, down]]])
   const chain = []
   if (at.has(tile)) {
     let prev = entryTile(T, tile, from ?? w.tile), cur = tile
     while (at.has(cur)) {
       const nb = T.neighbors(cur)
-      const next = nb[(nb.indexOf(prev) + 2) % 4]
+      const k = (nb.indexOf(prev) + 2) % 4, next = nb[k]
+      // The step across edge k is the frame rel(k, tw[k]) = step[k] * rot(tw[k]
+      // quarter turns); the slide alone, step[k], turns the content frame back
+      // by tw[k] against the next tile's frame.
       chain.push(at.get(cur).id)
-      to.set(at.get(cur).id, next)
+      to.set(at.get(cur).id, [next, (at.get(cur).down - T.tiles[cur].tw[k] + 4) % 4])
       prev = cur; cur = next
     }
   }
-  const raw = s.ws.map((x) => (to.has(x.id) ? {...x, tile: to.get(x.id)} : x))
+  const raw = s.ws.map((x) => (to.has(x.id) ? {...x, tile: to.get(x.id)[0], down: to.get(x.id)[1]} : x))
   const {ws, fallbacks, via} = connect(T, {...s, ws: raw}, id)
-  return {...finish(T, s, ws, via), landed: tile, chain, raw, fallbacks}
+  return {...finish(T, s, ws, via), landed: tile, landedDown: down, chain, raw, fallbacks}
 }
 
-const api = {C, M, wrapAngle, lerpFrame, Tiling, FILL_ORDERS, fillSequence, emptyState, openWorkspace, nearestFree, components, mapShape, connect, followCenter, removeWorkspace, moveWindow, entryTile, dropWorkspace}
+// Down edge on tile `to` nearest to down edge `down` of tile `from` carried
+// straight over (along the line between their centers); kept when too far.
+function carryDown(T, from, down, to) {
+  const F = T.relFrame(from, to, 8)
+  if (!F) return down
+  return ((Math.round(down - M.split(F).alpha / (Math.PI / 2)) % 4) + 4) % 4
+}
+
+const api = {C, M, wrapAngle, lerpFrame, Tiling, FILL_ORDERS, fillSequence, emptyState, openWorkspace, nearestFree, components, mapShape, connect, followCenter, removeWorkspace, moveWindow, entryTile, dropWorkspace, carryDown}
 if (typeof module !== 'undefined') module.exports = api
 else root.Hyper = api
 })(this)

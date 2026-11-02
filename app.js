@@ -54,6 +54,19 @@ for (let k = 0; k < 4; k++) {
   }
 }
 const ASPECT = 9 / 16
+// A workspace's content frame is its tile's frame turned by `down` quarter
+// turns (see openWorkspace); windows and the screen area are drawn in it. An
+// empty tile has no content and uses its own frame.
+const cq = (down) => M.rot(((down ?? 0) * Math.PI) / 2)
+const content = (F, w) => M.compose(F, cq(w?.down))
+const QUARTER = Math.PI / 2
+const nearestQ = (alpha) => ((Math.round(alpha / QUARTER) % 4) + 4) % 4
+// The edge of `tile` drawn nearest the bottom of the screen right now, as a
+// down: a workspace started there looks upright.
+function screenDown(tile) {
+  const F = screenFrame(tile)
+  return F ? nearestQ(-M.split(F).alpha) : 0
+}
 function rectPoly(u0, v0, u1, v1, n = 8) {
   const pts = []
   const edge = (a, b) => { for (let i = 0; i < n; i++) { const t = i / n; pts.push(T.local(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)) } }
@@ -220,15 +233,16 @@ function drawWorkspace(F, w, alpha) {
   ctx.globalAlpha = 1
 }
 
-// A move is a list of segments, each from a tile-relative offset to another.
-// A segment with `rigid` moves the workspace with its whole piece: every member
-// follows the same partial slide G^e (in the piece root's frame), so the piece
-// keeps its shape every frame and never turns about a point; `turn` spins the workspace in place
-// onto its new tile's orientation.
+// A move is a list of segments, each from a content frame to another, both
+// relative to `fromTile`'s frame. A segment with `rigid` moves the workspace
+// with its whole piece: every member follows the same partial slide G^e (in
+// the piece root's frame), so the piece keeps its shape every frame and never
+// turns about a point. Its down edge rides G, so `turn` (the leftover spin onto
+// the new content frame) is 0 up to rounding.
 function segRel(seg, e) {
   if (!seg.rigid) return lerpFrame(seg.off, seg.rel, e)
   const {Fu, G, turn} = seg.rigid
-  return M.compose(M.compose(M.inv(Fu), M.slidePow(G, e)), M.compose(Fu, M.rot(turn * e)))
+  return M.compose(M.compose(M.inv(Fu), M.slidePow(G, e)), M.compose(Fu, M.compose(seg.off, M.rot(turn * e))))
 }
 function animFrame(a, t) {
   let el = t - a.t0, seg = a.segs.at(-1), p = 1
@@ -237,14 +251,15 @@ function animFrame(a, t) {
   return base && M.compose(base, segRel(seg, ease(p)))
 }
 
-// Path of a slide from `fromTile` to `to`: rigid with its piece when `via`
-// starts there.
-function slideSeg(fromTile, to, via, dur) {
-  const rel = T.relFrame(fromTile, to, DRAW_DEPTH) ?? M.id()
+// Path of a slide from `fromTile` with down q0 to `to` with down q1: rigid
+// with its piece when `via` starts there, else straight along the line
+// between the two centers (a one-tile push is exactly that slide).
+function slideSeg(fromTile, q0, to, q1, via, dur) {
+  const off = cq(q0), rel = M.compose(T.relFrame(fromTile, to, DRAW_DEPTH) ?? M.id(), cq(q1))
   const Fu = via && via.from === fromTile && T.relFrame(via.root, fromTile, DRAW_DEPTH)
-  if (!Fu) return {fromTile, off: M.id(), rel, dur}
-  const D = M.compose(M.inv(Fu), M.compose(via.G, Fu))
-  return {fromTile, off: M.id(), rel, dur, rigid: {Fu, G: via.G, turn: wrapAngle(M.split(M.compose(M.inv(D), rel)).alpha)}}
+  if (!Fu) return {fromTile, off, rel, dur}
+  const D = M.compose(M.compose(M.inv(Fu), M.compose(via.G, Fu)), off)
+  return {fromTile, off, rel, dur, rigid: {Fu, G: via.G, turn: wrapAngle(M.split(M.compose(M.inv(D), rel)).alpha)}}
 }
 
 function draw() {
@@ -256,13 +271,13 @@ function draw() {
   const vis = visible()
   const pv = drag?.ws && drag.preview
   // While a drag hovers, the plane shows the layout a drop would leave.
-  const occ = pv ? new Map(pv.state.ws.map((w) => [w.tile, {w: S.ws.find((x) => x.id === w.id)}])) : wsAtTile()
+  const occ = pv ? new Map(pv.state.ws.map((w) => [w.tile, {w: {...S.ws.find((x) => x.id === w.id), down: w.down}}])) : wsAtTile()
   const hidden = new Set(anims.filter((a) => a.kind === "move").map((a) => a.id))
   if (drag?.ws) hidden.add(drag.ws)
   const near = reach()
   for (const [id, F] of vis) {
     const o = occ.get(id)
-    if (o && !hidden.has(o.w.id)) drawWorkspace(F, o.w, pv && pv.moves.some((m) => m.id === o.w.id) ? 0.6 : 1)
+    if (o && !hidden.has(o.w.id)) drawWorkspace(content(F, o.w), o.w, pv && pv.moves.some((m) => m.id === o.w.id) ? 0.6 : 1)
     path(F, boundary)
     ctx.lineWidth = 1
     ctx.strokeStyle = near.has(id) ? "#3f5873" : "#2a3a4c"
@@ -277,7 +292,7 @@ function draw() {
       if (F) drawWorkspace(F, w, 1)
     } else if (a.kind === "fade") {
       const F = screenFrame(a.tile)
-      if (F) drawWorkspace(F, a.w, 1 - p)
+      if (F) drawWorkspace(content(F, a.w), a.w, 1 - p)
     }
   }
   const cF = vis.get(S.anchor)
@@ -298,10 +313,10 @@ function draw() {
         if (!F || m.id === drag.ws) continue
         ctx.setLineDash([4, 4]); path(F, boundary); ctx.lineWidth = 2; ctx.strokeStyle = "#ffb070"; ctx.stroke(); ctx.setLineDash([])
       }
-      const end = pv.state.ws.find((x) => x.id === drag.ws).tile
+      const pw = pv.state.ws.find((x) => x.id === drag.ws), end = pw.tile
       const Fe = vis.get(end)
       if (Fe) {
-        drawWorkspace(Fe, S.ws.find((x) => x.id === drag.ws), 0.35)
+        drawWorkspace(content(Fe, pw), S.ws.find((x) => x.id === drag.ws), 0.35)
         path(Fe, boundary); ctx.lineWidth = 3; ctx.strokeStyle = "#8be28b"; ctx.stroke()
       }
     }
@@ -327,7 +342,7 @@ function draw() {
   const dt = now() - t0
   frameTimes.push(dt); if (frameTimes.length > 60) frameTimes.shift()
   const avg = frameTimes.reduce((x, y) => x + y, 0) / frameTimes.length
-  const alpha = fF ? M.split(fF).alpha : 0
+  const alpha = fF ? M.split(content(fF, wsAtTile().get(fTile)?.w)).alpha : 0
   document.getElementById("status").textContent =
     `workspaces with windows ${S.ws.length}  pieces ${components(T, S).length}\n` +
     `tiles drawn ${vis.size}  generated ${T.tiles.length}  view tile ${view.root}\n` +
@@ -393,7 +408,8 @@ function drawDesk(r) {
 function tileRect(tile) {
   const F = screenFrame(tile)
   if (!F) return {x: W / 2 - 20, y: H / 2 - 12, w: 40, h: 24}
-  const pts = screenPoly.map((pt) => toScreen(M.apply(F, pt)))
+  const Fc = content(F, wsAtTile().get(tile)?.w)
+  const pts = screenPoly.map((pt) => toScreen(M.apply(Fc, pt)))
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1])
   const x = Math.min(...xs), y = Math.min(...ys)
   return {x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y}
@@ -457,10 +473,12 @@ function goTo(tile, {upright = false} = {}) {
   const d = M.dist0(F0)
   const dur = DUR * Math.min(2, 0.75 + 0.25 * d / (2 * T.rE))
   const orient = upright ? "blend" : opt.orient
+  // Upright puts the workspace's down edge at the bottom of the screen.
+  const up = M.inv(cq(wsAtTile().get(tile)?.w.down))
   let phases
   if (orient === "drift") phases = [{from: F0, to: drift, dur, rot: false}]
-  else if (orient === "blend") phases = [{from: F0, to: M.id(), dur, rot: true}]
-  else phases = [{from: F0, to: drift, dur, rot: false}, {from: drift, to: M.id(), dur: DUR * 0.7, rot: true}]
+  else if (orient === "blend") phases = [{from: F0, to: up, dur, rot: true}]
+  else phases = [{from: F0, to: drift, dur, rot: false}, {from: drift, to: up, dur: DUR * 0.7, rot: true}]
   viewAnim = {tile, phases, t0: now()}
   setFocusTile(tile)
   kick()
@@ -482,17 +500,25 @@ function stepView() {
   viewAnim = null
   return true
 }
+// Each move animates the motion its down edge rode (m.down is [old, new]): a
+// push one tile on, then its piece's slide when it has one (`via`, starting
+// at via.from with down via.down). A dropped workspace (in `starts`) first
+// settles from where it was let go onto its landing tile's nearest edge.
 function applyMoves(moves, {follow = true, starts = new Map()} = {}) {
   for (const m of moves) {
     const st = starts.get(m.id)
     const fromTile = st?.tile ?? m.from
+    const [q0, q1] = m.down
+    const viaQ = m.via?.down ?? q1
     // A drop away from the group lands on its tile first, then slides back.
     const segs = st && fromTile !== m.to
-      ? [{fromTile, off: st.off, rel: M.id(), dur: DUR * 0.6}, {fromTile, off: M.id(), rel: M.id(), dur: DUR * 0.4}, slideSeg(fromTile, m.to, m.via, DUR * 1.5)]
-      : st ? [{fromTile, off: st.off, rel: T.relFrame(fromTile, m.to, DRAW_DEPTH) ?? M.id(), dur: DUR * 1.2}] : [slideSeg(fromTile, m.to, m.via, DUR * 1.2)]
+      ? [{fromTile, off: st.off, rel: cq(st.down), dur: DUR * 0.6}, {fromTile, off: cq(st.down), rel: cq(st.down), dur: DUR * 0.4}, slideSeg(fromTile, st.down, m.to, q1, m.via, DUR * 1.5)]
+      : st ? [{fromTile, off: st.off, rel: M.compose(T.relFrame(fromTile, m.to, DRAW_DEPTH) ?? M.id(), cq(q1)), dur: DUR * 1.2}]
+      : m.via && m.via.from !== m.from ? [slideSeg(m.from, q0, m.via.from, viaQ, null, DUR * 0.6), slideSeg(m.via.from, viaQ, m.to, q1, m.via, DUR * 1.2)]
+      : [slideSeg(m.from, q0, m.to, q1, m.via, DUR * 1.2)]
     anims.push({kind: "move", id: m.id, segs, t0: now(), dur: segs.reduce((x, g) => x + g.dur, 0)})
     if (follow && focus.ws === m.id && !viewAnim) {
-      const screen = screenFrame(m.from)
+      const screen = screenFrame(m.from) && M.compose(screenFrame(m.from), cq(q0))
       if (screen) anims.push({kind: "follow", fromTile: m.from, seg: segs[0], screen, t0: now(), dur: DUR * 1.2})
     }
   }
@@ -553,7 +579,7 @@ function openWindow() {
     kick()
     return
   }
-  const r = openWorkspace(T, S, tile)
+  const r = openWorkspace(T, S, tile, screenDown(tile))
   S = {...r.state, ws: r.state.ws.map((x) => (x.id === r.added.id ? {...x, windows: [newWindow()]} : x))}
   focus = {ws: r.added.id}
   report(`open the first window on tile ${tile}`, r)
@@ -613,7 +639,7 @@ function settleDesk(tile, added) {
   const w = S.ws[i]
   if (!w.windows.length) { doRemove(i); return }
   if (w.id !== added) return
-  const r = openWorkspace(T, {...S, ws: S.ws.filter((x) => x !== w), nextId: w.id}, tile)
+  const r = openWorkspace(T, {...S, ws: S.ws.filter((x) => x !== w), nextId: w.id}, tile, w.down)
   S = {...r.state, nextId: S.nextId, ws: r.state.ws.map((x) => (x.id === w.id ? {...x, windows: w.windows} : x))}
   focus = {ws: w.id}
   report(`open the first window on tile ${tile}`, r)
@@ -631,7 +657,7 @@ function deskOpen() {
   const w = S.ws.find((x) => x.tile === desk.tile)
   if (w) { setWindows(w.id, (ws) => [...ws, newWindow()]); log(`open a window, now a ${wsLabel(S.ws.find((x) => x.id === w.id))}`); return }
   desk.added = S.nextId
-  S = {...S, ws: [...S.ws, {id: S.nextId, tile: desk.tile, windows: [newWindow()]}], nextId: S.nextId + 1}
+  S = {...S, ws: [...S.ws, {id: S.nextId, tile: desk.tile, down: screenDown(desk.tile), windows: [newWindow()]}], nextId: S.nextId + 1}
   log(`open the first window on tile ${desk.tile}; it joins the group when you leave`)
   kick()
 }
@@ -668,7 +694,8 @@ function deskMove(e) {
 function windowOutlines(tile) {
   const F = (visCache ?? visible()).get(tile), w = wsAtTile().get(tile)?.w
   if (!F || !w || !showsWindows(F)) return []
-  return w.windows.map((win, i) => ({i, n: w.windows.length, id: win.id, ws: w.id, shade: win.shade, pts: windowShape(win).body.map((pt) => toScreen(M.apply(F, pt))), bar: windowShape(win).bar.map((pt) => toScreen(M.apply(F, pt)))}))
+  const Fc = content(F, w)
+  return w.windows.map((win, i) => ({i, n: w.windows.length, id: win.id, ws: w.id, shade: win.shade, pts: windowShape(win).body.map((pt) => toScreen(M.apply(Fc, pt))), bar: windowShape(win).bar.map((pt) => toScreen(M.apply(Fc, pt)))}))
 }
 function windowAt(tile, x, y) {
   const inside = (pts) => {
@@ -739,7 +766,8 @@ function build(n) {
   timers.clear()
   S = emptyState(); nextWin = 1; desk = null; deskDrag = null; view.root = 0; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
   for (let i = 0; i < n; i++) {
-    const r = openWorkspace(T, S, nearestFree(T, S))
+    const tile = nearestFree(T, S)
+    const r = openWorkspace(T, S, tile, screenDown(tile))
     S = {...r.state, ws: r.state.ws.map((x) => (x.id === r.added.id ? {...x, windows: Array.from({length: 1 + ((x.id * 7) % 3)}, newWindow)} : x))}
   }
   active = S.anchor
@@ -784,7 +812,7 @@ canvas.addEventListener("pointermove", (e) => {
     if (hover !== drag.hover) {
       drag.from = hover === null ? null : entryFrom(hover, drag.lastZ ?? z)
       drag.hover = hover
-      drag.preview = hover === null ? null : dropWorkspace(T, S, drag.ws, hover, drag.from)
+      drag.preview = hover === null ? null : dropWorkspace(T, S, drag.ws, hover, drag.from, dropDown(hover, drag.frame))
     }
     drag.lastZ = z
     drag.moved = true
@@ -803,7 +831,7 @@ canvas.addEventListener("pointermove", (e) => {
   if (drag.candidate !== null) {
     drag.ws = drag.candidate
     drag.hover = drag.startTile
-    drag.frame = M.compose(M.to(drag.start), M.rot(M.split(screenFrame(drag.startTile)).alpha))
+    drag.frame = M.compose(M.to(drag.start), M.rot(M.split(content(screenFrame(drag.startTile), S.ws.find((w) => w.id === drag.ws))).alpha))
     log(`picked up a ${wsLabel(S.ws.find((w) => w.id === drag.ws))}`)
     kick()
     return
@@ -862,14 +890,21 @@ function entryFrom(tile, z) {
   return best
 }
 
+// Down edge for a dragged workspace, drawn with content frame `frame`, landing
+// on `tile`: the edge nearest to how it is drawn, so it turns 45 deg at most.
+function dropDown(tile, frame) {
+  const F = screenFrame(tile)
+  return F ? nearestQ(M.split(M.compose(M.inv(F), frame)).alpha) : null
+}
+
 function drop(d) {
   const w = S.ws.find((x) => x.id === d.ws)
   const target = d.hover ?? w.tile
-  const r = d.hover !== null && d.preview ? d.preview : dropWorkspace(T, S, w.id, target, d.from ?? null)
+  const r = d.hover !== null && d.preview ? d.preview : dropWorkspace(T, S, w.id, target, d.from ?? null, dropDown(target, d.frame))
   const base = screenFrame(target)
   const starts = new Map()
-  if (base) starts.set(w.id, {tile: target, off: M.compose(M.inv(base), d.frame)})
-  if (!r.moves.some((m) => m.id === w.id)) r.moves.push({id: w.id, from: w.tile, to: w.tile})
+  if (base) starts.set(w.id, {tile: target, down: r.landedDown, off: M.compose(M.inv(base), d.frame)})
+  if (!r.moves.some((m) => m.id === w.id)) r.moves.push({id: w.id, from: w.tile, to: w.tile, down: [w.down, w.down]})
   S = r.state
   report(`drop a ${wsLabel(w)} on tile ${target}${r.chain.length ? ` (insert, pushed ${r.chain.length})` : ""}`, r)
   applyMoves(r.moves, {follow: false, starts})
@@ -880,7 +915,9 @@ function dropWindow(d) {
   if (!src || target === null || target === src.tile) { kick(); return }
   const win = src.windows.find((x) => x.id === d.win.id)
   const occupant = S.ws.find((x) => x.tile === target)
-  const r = moveWindow(T, S, src.id, target, src.windows.length === 1)
+  // The window keeps its place in content coordinates, so it lies in the
+  // target's flat space, square to the target's down edge.
+  const r = moveWindow(T, S, src.id, target, src.windows.length === 1, screenDown(target))
   const dest = occupant?.id ?? r.added.id
   S = {...r.state, ws: r.state.ws.map((x) => (x.id === src.id ? {...x, windows: x.windows.filter((v) => v !== win)} : x.id === dest ? {...x, windows: [...(x.windows ?? []), win]} : x))}
   if (r.removed) {
@@ -943,7 +980,9 @@ window.app = {
   idle: () => !viewAnim && anims.length === 0 && timers.size === 0 && (!rim || rim.alpha === rim.target),
   redraw: () => { draw() },
   pieces: () => components(T, S).length,
-  windows: () => S.ws.map((w) => ({id: w.id, tile: w.tile, wins: w.windows.map((x) => x.id)})),
+  windows: () => S.ws.map((w) => ({id: w.id, tile: w.tile, down: w.down, wins: w.windows.map((x) => x.id)})),
+  // Screen content frame of a workspace as drawn now, moving or not.
+  contentFrame: (id) => { const a = anims.find((x) => x.kind === "move" && x.id === id); if (a) return animFrame(a, now()); const w = S.ws.find((x) => x.id === id), F = w && screenFrame(w.tile); return F && content(F, w) },
   get drag() { return drag },
   get rim() { return rim },
   screenAngle,
