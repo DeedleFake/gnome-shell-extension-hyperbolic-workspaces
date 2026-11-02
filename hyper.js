@@ -111,35 +111,34 @@ class Tiling {
   abs(id) {
     return this.tiles[id].P
   }
-  posKey(x, y) {
-    return `${Math.floor(x / 1.3)},${Math.floor(y / 1.3)}`
+  // Tiles are binned by polar position around the origin: distance in steps
+  // of 0.5, angle in steps that shrink with distance, so a bin is about 0.5
+  // across everywhere. A match is anything within 0.1 (tile centers are at
+  // least 2 rE = 2.1 apart; rounding far out stays far below 0.1).
+  polar(P) {
+    const r = M.dist0(P), [x, y] = M.hyperXY(P)
+    return [r, Math.atan2(y, x)]
+  }
+  binKey(ri, th) {
+    const w = 0.5 / Math.sinh(Math.max(0.5, ri * 0.5))
+    const n = ri === 0 ? 1 : Math.max(1, Math.floor((2 * Math.PI) / w))
+    return [n, ((Math.floor(((th + Math.PI) / (2 * Math.PI)) * n) % n) + n) % n]
   }
   index(id) {
-    const [x, y] = M.hyperXY(this.tiles[id].P), k = this.posKey(x, y)
+    const [r, th] = this.polar(this.tiles[id].P), ri = Math.floor(r / 0.5), k = `${ri},${this.binKey(ri, th)[1]}`
     const list = this.byPos.get(k)
     if (list) list.push(id); else this.byPos.set(k, [id])
   }
-  unindex(id) {
-    const [x, y] = M.hyperXY(this.tiles[id].P), k = this.posKey(x, y)
-    const list = this.byPos.get(k)
-    if (!list) return
-    const i = list.indexOf(id)
-    if (i >= 0) list.splice(i, 1)
-    if (!list.length) this.byPos.delete(k)
-  }
-  // Known tile at frame P, if P is near enough the origin to compare. Tile
-  // centers are at least 2 sinh(rE) = 2.6 apart in hyperboloid x/y, so the
-  // match within 1 is unique while rounding error stays far below that.
+  // Known tile at frame P, if P is near enough the origin to compare.
   atPos(P) {
     if (C.abs2(P.a) > 1e9) return null
-    const [x, y] = M.hyperXY(P)
-    const cx = Math.floor(x / 1.3), cy = Math.floor(y / 1.3)
-    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
-      const list = this.byPos.get(`${cx + i},${cy + j}`)
-      if (!list) continue
-      for (const id of list) {
-        const [u, v] = M.hyperXY(this.tiles[id].P)
-        if ((u - x) ** 2 + (v - y) ** 2 < 1) return id
+    const [r, th] = this.polar(P), r0 = Math.floor(r / 0.5)
+    for (let ri = Math.max(0, r0 - 1); ri <= r0 + 1; ri++) {
+      const [n, i] = this.binKey(ri, th)
+      for (const dt of n < 3 ? [0, 1] : [-1, 0, 1]) {
+        const list = this.byPos.get(`${ri},${(i + dt + n) % n}`)
+        if (!list) continue
+        for (const id of list) if (M.dist0(M.compose(M.inv(this.tiles[id].P), P)) < 0.1) return id
       }
     }
     return null
@@ -232,6 +231,69 @@ class Tiling {
     }
     return t.nbr
   }
+  // Free tiles nobody needs, so the graph stays bounded over a long session.
+  // `pins` is a list of [tile, depth]: every tile within `depth` edge steps of
+  // a pinned tile is kept, and so is a shortest linked path from each pinned
+  // tile to the first one, which becomes the new origin. The kept tiles stay
+  // one linked piece, so walking links still finds every tile near another,
+  // and positions are recomputed from the new origin, so they stay precise
+  // near the group however far it wanders. Ids are never reused, so an id
+  // held by someone who didn't pin it reads as gone (undefined), never as a
+  // different tile. Every cache of frames is dropped.
+  prune(pins) {
+    const origin = pins[0][0], p = this.p
+    const par = new Map([[origin, -1]])
+    const q = [origin]
+    for (let i = 0; i < q.length; i++) for (const n of this.tiles[q[i]].nbr) if (n !== -1 && !par.has(n)) { par.set(n, q[i]); q.push(n) }
+    const keep = new Set()
+    for (const [pin, depth] of pins) {
+      if (!this.tiles[pin]) continue
+      for (let t = pin; t !== undefined && t !== -1 && !keep.has(t); t = par.get(t)) keep.add(t)
+      const ring = new Map([[pin, 0]]), fr = [pin]
+      for (let i = 0; i < fr.length; i++) {
+        keep.add(fr[i])
+        if (ring.get(fr[i]) >= depth) continue
+        for (const n of this.tiles[fr[i]].nbr) if (n !== -1 && !ring.has(n)) { ring.set(n, ring.get(fr[i]) + 1); fr.push(n) }
+      }
+    }
+    const tiles = []
+    for (const id of keep) tiles[id] = this.tiles[id]
+    for (const id of keep) {
+      const t = tiles[id]
+      for (let k = 0; k < p; k++) if (t.nbr[k] !== -1 && !keep.has(t.nbr[k])) { t.nbr[k] = -1; t.tw[k] = 0 }
+    }
+    this.tiles = tiles
+    this.count = keep.size
+    this.origin = origin
+    this.byPos = new Map()
+    const o = tiles[origin]
+    o.P = M.id(); o.parent = -1; o.pk = 0
+    const seen = new Set([origin]), bq = [origin]
+    for (let i = 0; i < bq.length; i++) {
+      const t = tiles[bq[i]]
+      this.index(bq[i])
+      for (let k = 0; k < p; k++) {
+        const n = t.nbr[k]
+        if (n === -1 || seen.has(n)) continue
+        seen.add(n); bq.push(n)
+        const c = tiles[n]
+        c.P = M.compose(t.P, this.rel[k][t.tw[k]]); c.parent = bq[i]; c.pk = k
+      }
+    }
+    this.frameCache.clear()
+    this.keyCache?.clear()
+    this.seqCache?.clear()
+    this.lastKept = keep.size
+    this.prunes = (this.prunes ?? 0) + 1
+  }
+  // Prune when the graph has doubled since the last prune (and is past a
+  // floor that keeps prunes rare), or when the first pin has wandered far
+  // enough from the origin that positions start losing digits.
+  maybePrune(pins, floor = 6000) {
+    const far = this.tiles[pins[0][0]] && M.dist0(this.tiles[pins[0][0]].P) > 12
+    if (far || this.count > Math.max(floor, 2 * (this.lastKept ?? 0))) { this.prune(pins); return true }
+    return false
+  }
   // Frames of every tile within `depth` edge steps of `id`, relative to it.
   frames(id, depth = 6) {
     const key = `${id}:${depth}`
@@ -288,17 +350,21 @@ class Tiling {
     const k = [(2 * z[0]) / d, (2 * z[1]) / d]
     return Math.abs(k[0]) <= this.kleinHalf && Math.abs(k[1]) <= this.kleinHalf
   }
-  // Hyperbolic distance between tile centers; far pairs fall back to ring count.
+  // Frame of b relative to a from stored positions: builds no tiles. Precise
+  // while both are within about 12 of the origin, which pruning keeps near
+  // the group.
+  relP(a, b) {
+    return M.compose(M.inv(this.tiles[a].P), this.tiles[b].P)
+  }
+  // Hyperbolic distance between tile centers.
   dist(a, b) {
-    const F = this.relFrame(a, b)
-    return F ? M.dist0(F) : 99
+    return M.dist0(this.relP(a, b))
   }
 }
 
 // Clockwise from screen-right, in the anchor's frame.
 function angleKey(T, anchor, id) {
-  const F = T.relFrame(anchor, id)
-  if (!F) return 0
+  const F = T.relP(anchor, id)
   const z = M.center(F)
   if (C.abs2(z) < 1e-18) return 0
   let a = -Math.atan2(z[1], z[0])
@@ -451,7 +517,7 @@ function slidePiece(T, occ, main, piece) {
   const free = (t) => !occ.has(t) || own.has(t)
   const border = []
   for (const m of main) for (const n of T.neighbors(m)) if (free(n) && !mainSet.has(n) && !border.includes(n)) border.push(n)
-  const Pr = T.tiles[r].P, seen = new Set()
+  const seen = new Set()
   let best = null
   for (const u of piece) {
     const Fu = F.get(u), Pu = T.tiles[u].P
@@ -461,13 +527,11 @@ function slidePiece(T, occ, main, piece) {
         // The symmetry sending u to b, turned, seen from r.
         const G = M.compose(M.compose(Fu, M.compose(Pub, M.rot((turn * Math.PI) / 2))), M.inv(Fu))
         if (!M.isSlide(G)) continue
-        const turns = new Map(), img = mapShape(T, piece, u, b, turn, turns)
-        const key0 = `${img.get(r)}:${turns.get(r)}`
+        // The same symmetry is reached from every tile of the piece it puts on
+        // the border; G and -G are one map.
+        const sg = G.a[0] < 0 ? -1 : 1, key0 = [...G.a, ...G.b].map((x) => (sg * x).toFixed(6)).join()
         if (seen.has(key0)) continue
         seen.add(key0)
-        let ok = true
-        for (const v of img.values()) if (!free(v)) { ok = false; break }
-        if (!ok) continue
         let far = 0, total = 0, bend = 0, straight = false
         for (const Fv of F.values()) {
           // Seen from v, G is a move to its new spot followed by a turn; no turn
@@ -477,11 +541,23 @@ function slidePiece(T, occ, main, piece) {
           if (a < 1e-6) straight = true
         }
         const key = [straight ? 0 : 1, far, total, bend]
-        if (!best || cmpTol(key, best.key) < 0) best = {key, img, turns, G}
+        if (best && cmpTol(key, best.key) >= 0) continue
+        // Where each piece tile would go, looked up by position: a tile not
+        // built yet can't be occupied, so nothing is built until one wins.
+        const g = M.compose(M.compose(T.tiles[b].P, M.rot((turn * Math.PI) / 2)), M.inv(Pu))
+        let ok = true
+        for (const v of piece) {
+          const at = T.atPos(M.compose(g, T.tiles[v].P))
+          if (at !== null && !free(at)) { ok = false; break }
+        }
+        if (!ok) continue
+        best = {key, u, b, turn, G}
       }
     }
   }
-  return best && {img: best.img, turns: best.turns, root: r, G: best.G}
+  if (!best) return null
+  const turns = new Map(), img = mapShape(T, piece, best.u, best.b, best.turn, turns)
+  return {img, turns, root: r, G: best.G}
 }
 
 // Stay connected: while the group is split, the biggest piece stays put and the
@@ -608,10 +684,9 @@ function dropWorkspace(T, s, id, tile, from = null, down = null) {
 }
 
 // Down edge on tile `to` nearest to down edge `down` of tile `from` carried
-// straight over (along the line between their centers); kept when too far.
+// straight over (along the line between their centers).
 function carryDown(T, from, down, to) {
-  const F = T.relFrame(from, to, 8)
-  if (!F) return down
+  const F = T.relP(from, to)
   return ((Math.round(down - M.split(F).alpha / (Math.PI / 2)) % 4) + 4) % 4
 }
 

@@ -474,11 +474,11 @@ function draw() {
   const alpha = fF ? M.split(content(fF, wsAtTile().get(fTile)?.w)).alpha : 0
   document.getElementById("status").textContent =
     `workspaces with windows ${S.ws.length}  pieces ${components(T, S).length}\n` +
-    `tiles drawn ${vis.size}  generated ${T.tiles.length}  view tile ${view.root}\n` +
+    `tiles drawn ${vis.size}  generated ${T.count}  view tile ${view.root}\n` +
     `draw ${dt.toFixed(1)} ms (avg ${avg.toFixed(1)})\n` +
     `active ${active === null ? "none" : tileLabel(active)}\n` +
     `focus ${focusLabel()}  rotation ${Math.round(wrapAngle(alpha) * 180 / Math.PI)} deg`
-  window.__stats = {drawMs: dt, avgMs: avg, tiles: vis.size, generated: T.tiles.length, root: view.root, R: view.R}
+  window.__stats = {drawMs: dt, avgMs: avg, tiles: vis.size, generated: T.count, prunes: T.prunes ?? 0, root: view.root, R: view.R}
 }
 
 // The entered workspace drawn as a desktop filling rect r. Content
@@ -688,6 +688,17 @@ function frame() {
   if (dirty || a || b) draw()
   dirty = false
   if (a || b || viewAnim || anims.length) kick()
+  else if (!drag && !desk) prune()
+}
+
+// Free tiles nobody can see or reach, once nothing is moving. Everything that
+// holds a tile is pinned: the center (with the ball the fill order reads), the
+// view (with what it draws), each workspace and the tiles around it, and the
+// focus and last-move tiles. Anything cached by tile is dropped with them.
+function prune() {
+  const pins = [[S.anchor, 6], [view.root, DRAW_DEPTH + 1], ...S.ws.map((w) => [w.tile, 2])]
+  for (const t of [focus.tile, active, lastMove?.from, lastMove?.to]) if (t !== undefined && t !== null) pins.push([t, 2])
+  if (T.maybePrune(pins)) { reachCache.clear(); visCache = null }
 }
 
 function later(fn, ms) {
