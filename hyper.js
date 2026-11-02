@@ -507,8 +507,10 @@ function mapShape(T, tiles, from, to, turn, turns = null) {
 // Every candidate puts some piece tile on a free tile bordering `main` (else
 // the image can't touch it), so only those are tried: the search stays at the
 // group's edge and builds no tiles beyond the ones next to it.
+// With `near` (a tile), the nearest landing wins first, then a straight one,
+// then the one farthest from `near`.
 // Returns the tile map and the symmetry G, as a frame relative to piece[0].
-function slidePiece(T, occ, main, piece) {
+function slidePiece(T, occ, main, piece, near = null) {
   const r = piece[0], own = new Set(piece), mainSet = new Set(main)
   // Frames of the piece's tiles relative to r, by walking the piece itself.
   const F = new Map([[r, M.id()]])
@@ -540,7 +542,9 @@ function slidePiece(T, occ, main, piece) {
           far = Math.max(far, d); total += d; bend = Math.max(bend, a)
           if (a < 1e-6) straight = true
         }
-        const key = [straight ? 0 : 1, far, total, bend]
+        // A dropped workspace left on its own goes to the nearest spot instead
+        // (see connect), on the far side from where it was picked up on a tie.
+        const key = near === null ? [straight ? 0 : 1, far, total, bend] : [far, straight ? 0 : 1, -T.dist(near, b), bend]
         if (best && cmpTol(key, best.key) >= 0) continue
         // Where each piece tile would go, looked up by position: a tile not
         // built yet can't be occupied, so nothing is built until one wins.
@@ -566,7 +570,7 @@ function slidePiece(T, occ, main, piece) {
 // `via` maps each workspace that slid to its piece's motion: the piece's root
 // tile, the tile it slid from, its down edge there, and the symmetry G, so the
 // whole piece can be animated as one rigid body. Its down edge rides G.
-function connect(T, s, mover = null) {
+function connect(T, s, mover = null, from = null) {
   let ws = s.ws
   let fallbacks = 0
   const via = new Map()
@@ -578,7 +582,12 @@ function connect(T, s, mover = null) {
     const order = comps.map((c, i) => ({c, k: [...rank(c), i]})).sort((x, y) => cmp(x.k, y.k)).map((x) => x.c)
     const [main, piece] = order
     const occ = new Set(ws.map((w) => w.tile))
-    const slid = slidePiece(T, occ, main, piece)
+    // A dropped workspace cut off on its own slides back to the nearest free
+    // spot touching the group: ranked straight-first, the one straight slide
+    // can lie across the group (five squares at a corner leave a lone tile
+    // few straight lines), which reads as the drop being thrown away.
+    const near = from !== null && piece.length === 1 && piece[0] === moverTile ? from : null
+    const slid = slidePiece(T, occ, main, piece, near)
     const img = new Map(), motion = new Map()
     if (slid) for (const u of piece) { img.set(u, slid.img.get(u)); motion.set(u, slid) }
     else {
@@ -679,7 +688,7 @@ function dropWorkspace(T, s, id, tile, from = null, down = null) {
     }
   }
   const raw = s.ws.map((x) => (to.has(x.id) ? {...x, tile: to.get(x.id)[0], down: to.get(x.id)[1]} : x))
-  const {ws, fallbacks, via} = connect(T, {...s, ws: raw}, id)
+  const {ws, fallbacks, via} = connect(T, {...s, ws: raw}, id, w.tile)
   return {...finish(T, s, ws, via), landed: tile, landedDown: down, chain, raw, fallbacks}
 }
 
