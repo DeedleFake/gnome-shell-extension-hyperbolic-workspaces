@@ -4,7 +4,13 @@
 // center on a tile with windows, no overlaps, no lost workspaces, and nothing
 // moves except the insert chain, a newly opened far workspace, and pieces that
 // were cut off (each sliding as one rigid shape, never turning).
-const {M, wrapAngle, Tiling, emptyState, openWorkspace, removeWorkspace, moveWindow, dropWorkspace, components, mapShape} = require("./hyper.js")
+const H = require("./hyper.js")
+const {M, wrapAngle, Tiling, components, mapShape, emptyState} = H
+// Time spent in the placement calls alone (what the shell would run), and
+// the tiles they build, apart from the checks around them.
+let callMs = 0, callTiles = 0
+const timed = (f) => (...a) => { const t = process.hrtime.bigint(), n = T.count, r = f(...a); callMs += Number(process.hrtime.bigint() - t) / 1e6; callTiles += T.count - n; return r }
+const [openWorkspace, removeWorkspace, moveWindow, dropWorkspace] = [H.openWorkspace, H.removeWorkspace, H.moveWindow, H.dropWorkspace].map(timed)
 const T = new Tiling(4, 5)
 const OPS = +(process.argv[2] ?? 5000)
 const SEED = +(process.argv[3] ?? 7)
@@ -12,6 +18,9 @@ let seed = SEED
 const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648)
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)]
 const fail = (msg, extra) => { console.log("FAIL", msg, JSON.stringify(extra)); process.exit(1) }
+// Frame of b relative to a from the tiles' stored positions: no ball of tiles
+// built (and cached) around a, which is what made the checks themselves leak.
+const relP = (a, b) => M.compose(M.inv(T.tiles[a].P), T.tiles[b].P)
 const adjacent = (a, b) => T.neighbors(a).includes(b)
 const tilesOf = (ws) => new Map(ws.map((w) => [w.id, w.tile]))
 
@@ -23,7 +32,7 @@ function checkGroup(s, what) {
 }
 
 // The tiling symmetry that takes c[0] to `to`, turned by `turn` quarter turns.
-const symmetry = (c, to, turn) => M.compose(T.relFrame(c[0], to, 8), M.rot((turn * Math.PI) / 2))
+const symmetry = (c, to, turn) => M.compose(relP(c[0], to), M.rot((turn * Math.PI) / 2))
 // Is the center of the tile at frame Fu (relative to the symmetry's frame) on G's axis?
 // How far it turns against moving straight to its new spot, in degrees.
 const bend = (G, Fu) => (Math.abs(wrapAngle(M.split(M.compose(M.inv(Fu), M.compose(G, Fu))).alpha)) * 180) / Math.PI
@@ -65,9 +74,9 @@ function checkRejoin(raw, final, what) {
       const slides = turns.map((turn) => symmetry(c, dest(c[0]), turn)).filter(M.isSlide)
       if (!slides.length) fail(`${what}: a piece turned instead of sliding`, {c, to: c.map(dest)})
       st.pieces++; st.pieceTiles += c.length
-      if (!slides.some((G) => c.some((u) => onAxis(G, T.relFrame(c[0], u, 8))))) {
+      if (!slides.some((G) => c.some((u) => onAxis(G, relP(c[0], u))))) {
         st.offAxis++; if (c.length === 1) st.offAxisLone++
-        st.maxBend = Math.max(st.maxBend, Math.min(...slides.map((G) => Math.max(...c.map((u) => bend(G, T.relFrame(c[0], u, 8)))))))
+        st.maxBend = Math.max(st.maxBend, Math.min(...slides.map((G) => Math.max(...c.map((u) => bend(G, relP(c[0], u)))))))
       }
       if (comps.length === 2) {
         const others = new Set(comps.find((x) => x !== c))
@@ -91,7 +100,7 @@ function checkRejoin(raw, final, what) {
 // windows turned when they took the new tile's own frame (down always 0).
 const qr = (q) => M.rot((q * Math.PI) / 2)
 function leftover(D, from, q0, to, q1) {
-  const rel = T.relFrame(from, to, 10)
+  const rel = relP(from, to)
   if (!rel) return null
   const X = M.compose(M.inv(M.compose(D, qr(q0))), M.compose(rel, qr(q1)))
   return {off: M.dist0(X), turn: Math.abs(wrapAngle(M.split(X).alpha))}
@@ -111,8 +120,8 @@ function checkDown(prev, r, what, dropped = null) {
     if (m.via) stages.push({kind: "slide", from: mid, q0: qMid, to: m.to, q1: m.down[1]})
     for (const g of stages) {
       let D
-      if (g.kind === "slide") { const Fu = T.relFrame(m.via.root, g.from, 10); if (!Fu) { st.downFar++; continue } D = M.compose(M.inv(Fu), M.compose(m.via.G, Fu)) }
-      else { const rel = T.relFrame(g.from, g.to, 10); if (!rel) { st.downFar++; continue } D = M.to(M.center(rel)) }
+      if (g.kind === "slide") { const Fu = relP(m.via.root, g.from); if (!Fu) { st.downFar++; continue } D = M.compose(M.inv(Fu), M.compose(m.via.G, Fu)) }
+      else { const rel = relP(g.from, g.to); if (!rel) { st.downFar++; continue } D = M.to(M.center(rel)) }
       const now = leftover(D, g.from, g.q0, g.to, g.q1), was = leftover(D, g.from, 0, g.to, 0)
       if (!now) { st.downFar++; continue }
       if (now.off > 1e-6) fail(`${what}: ${g.kind} landed off its tile`, {m, now})
@@ -125,9 +134,12 @@ function checkDown(prev, r, what, dropped = null) {
 }
 
 let s = emptyState()
-const st = {downFar: 0, drops2: 0, slides2: 0, pushs2: 0, slideWas: 0, pushWas: 0, opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0, centerMoves: 0, oneStep: 0, winMoves: 0, winLast: 0, winNew: 0, winSplits: 0, pieces: 0, pieceTiles: 0, offAxis: 0, offAxisLone: 0, maxBend: 0}
+const st = {prunes: 0, downFar: 0, drops2: 0, slides2: 0, pushs2: 0, slideWas: 0, pushWas: 0, opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0, centerMoves: 0, oneStep: 0, winMoves: 0, winLast: 0, winNew: 0, winSplits: 0, pieces: 0, pieceTiles: 0, offAxis: 0, offAxisLone: 0, maxBend: 0}
 const t0 = Date.now()
+const pruneMs = [], opMs = [], samples = [], callOnly = [], tilesBuilt = []
 for (let i = 0; i < OPS; i++) {
+  const tOp = process.hrtime.bigint()
+  callMs = 0; callTiles = 0
   const x = rnd()
   const before = tilesOf(s.ws)
   const anchorBefore = s.anchor
@@ -204,8 +216,13 @@ for (let i = 0; i < OPS; i++) {
     s = r.state
   }
   checkGroup(s, `op ${i}`)
+  // What the shell would pin: the center's fill ball and each workspace's edge.
+  const tP = process.hrtime.bigint()
+  if (T.maybePrune([[s.anchor, 6], ...s.ws.map((w) => [w.tile, 2])])) { st.prunes++; pruneMs.push(Number(process.hrtime.bigint() - tP) / 1e6) }
   if (s.anchor !== anchorBefore) st.centerMoves++
   st.maxN = Math.max(st.maxN, s.ws.length)
+  opMs.push(Number(process.hrtime.bigint() - tOp) / 1e6); callOnly.push(callMs); tilesBuilt.push(callTiles)
+  if ((i + 1) % Math.max(1, Math.floor(OPS / 10)) === 0) samples.push(`${i + 1}:${T.count}`)
 }
 console.log(`## Stay connected, ${OPS} random ops, seed ${SEED} (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), ${Date.now() - t0} ms`)
 console.log(`opens ${st.opens} (${st.joined} away from the group slid over to join it; ${st.firstAway} first windows on an empty plane, where the center moved to them), closes ${st.removes} (${st.splits} split the group; ${st.slidRem} workspaces slid, most in one close ${st.maxPiece})`)
@@ -214,4 +231,9 @@ console.log(`window moves ${st.winMoves}: ${st.winLast} took the source's last w
 console.log(`${st.pieces} cut-off pieces moved (${st.pieceTiles} workspaces), each by one slide with no turn (${st.offAxis} along an axis that misses the piece, because no straight slide fit; ${st.offAxisLone} of them lone workspaces; most turn against moving straight ${st.maxBend.toFixed(1)} deg); ${st.oneStep} two-piece splits had a one-tile slide, and took it`)
 const pct = (a, b) => `${(100 * a / Math.max(1, b)).toFixed(1)}%`
 console.log(`down edges: ${st.slides2} slides with a piece and ${st.pushs2} insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on ${st.slideWas} slides (${pct(st.slideWas, st.slides2)}) and ${st.pushWas} pushes (${pct(st.pushWas, st.pushs2)}), ${pct(st.slideWas + st.pushWas, st.slides2 + st.pushs2)} overall; ${st.drops2} drops turned at most 45 deg to the nearest edge; ${st.downFar} stages too far to check`)
-console.log(`center moved ${st.centerMoves} times; fallbacks to one-at-a-time ${st.fallbacks}; max workspaces ${st.maxN}; every check passed`)
+console.log(`center moved ${st.centerMoves} times; fallbacks to one-at-a-time ${st.fallbacks}; max workspaces ${st.maxN}; ${st.prunes} prunes; every check passed`)
+const qs = (xs, p) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math.floor(p * xs.length))].toFixed(1)
+console.log(`placement calls alone: median ${qs(callOnly, 0.5)} ms, p90 ${qs(callOnly, 0.9)} ms, p99 ${qs(callOnly, 0.99)} ms, max ${Math.max(...callOnly).toFixed(1)} ms; tiles they built per op median ${qs(tilesBuilt, 0.5)}, p90 ${qs(tilesBuilt, 0.9)}, max ${Math.max(...tilesBuilt)}`)
+console.log(`prunes ${pruneMs.length}: median ${qs(pruneMs.length ? pruneMs : [0], 0.5)} ms, max ${Math.max(0, ...pruneMs).toFixed(1)} ms`)
+const q = (p) => [...opMs].sort((a, b) => a - b)[Math.min(opMs.length - 1, Math.floor(p * opMs.length))].toFixed(1)
+console.log(`per op (ops and checks) median ${q(0.5)} ms, p90 ${q(0.9)} ms, p99 ${q(0.99)} ms, max ${Math.max(...opMs).toFixed(1)} ms; tiles after op ${samples.join(' ')}; heap ${(process.memoryUsage().heapUsed / 1e6).toFixed(0)} MB`)
