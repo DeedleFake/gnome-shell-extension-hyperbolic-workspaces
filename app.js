@@ -86,10 +86,143 @@ function newWindow() {
   return {id, w, h, u: -0.9 + rnd() * (1.8 - w), v: VMAX - 0.12 - rnd() * (2 * VMAX - h - 0.2), shade: 200 + Math.floor(rnd() * 50)}
 }
 const BAR = 0.09
+// A slot is where the overview draws a window: {u, v, w, h} like a window's
+// own geometry, in its workspace's content coordinates.
 const shapeCache = new WeakMap()
-function windowShape(win) {
-  if (!shapeCache.has(win)) shapeCache.set(win, {body: rectPoly(win.u, win.v - win.h, win.u + win.w, win.v), bar: rectPoly(win.u, win.v - BAR, win.u + win.w, win.v, 6)})
-  return shapeCache.get(win)
+function slotShape(slot) {
+  if (!shapeCache.has(slot)) shapeCache.set(slot, {body: rectPoly(slot.u, slot.v - slot.h, slot.u + slot.w, slot.v), bar: rectPoly(slot.u, slot.v - BAR, slot.u + slot.w, slot.v, 6)})
+  return shapeCache.get(slot)
+}
+const lerpSlot = (a, b, t) => ({u: a.u + (b.u - a.u) * t, v: a.v + (b.v - a.v) * t, w: a.w + (b.w - a.w) * t, h: a.h + (b.h - a.h) * t})
+
+// The overview spreads a workspace's windows out so none overlap, like GNOME
+// Shell 51's UnalignedLayoutStrategy (js/ui/workspace.js): rows filled in
+// order of window height on screen, each row in order of x, one scale for
+// the whole layout capped at WINDOW_PREVIEW_MAXIMUM_SCALE, rows centered.
+// It works in GNOME's y-down space: y = -v. Spacing and padding are content
+// units (the screen area is 1.92 wide), GNOME's are pixels.
+const SPREAD_MAX_SCALE = 0.95, SPREAD_SPACING = 0.06, SPREAD_PAD = 0.08
+const SCALE_WEIGHT = 1, SPACE_WEIGHT = 0.1
+const spreadCache = new Map()
+function spreadSlots(windows) {
+  const key = windows.map((w) => `${w.id}:${w.u},${w.v},${w.w},${w.h}`).sort().join(" ")
+  if (spreadCache.has(key)) return spreadCache.get(key)
+  if (spreadCache.size > 2000) spreadCache.clear()
+  const area = {x: -0.96 + SPREAD_PAD, y: -VMAX + SPREAD_PAD, width: 1.92 - 2 * SPREAD_PAD, height: 2 * VMAX - 2 * SPREAD_PAD}
+  // Windows in creation order, as GNOME sorts by stable sequence.
+  const wins = [...windows].sort((a, b) => a.id - b.id).map((w) => ({w, bw: w.w, bh: w.h, cx: w.u + w.w / 2, cy: -w.v + w.h / 2}))
+  // Short windows are bumped up to 1.5x so they don't end up tiny.
+  const winScale = (x) => 1.5 + (1 - 1.5) * (x.bh / (2 * VMAX))
+  const sp = SPREAD_SPACING
+
+  function computeLayout(numRows) {
+    const idealRowWidth = wins.reduce((t, x) => t + x.bw * winScale(x), 0) / numRows
+    const sorted = [...wins].sort((a, b) => a.cy - b.cy)
+    const rows = []
+    let i = 0
+    for (let r = 0; r < numRows; r++) {
+      const row = {fullWidth: 0, fullHeight: 0, windows: []}
+      rows.push(row)
+      for (; i < sorted.length; i++) {
+        const x = sorted[i], s = winScale(x), width = x.bw * s
+        row.fullHeight = Math.max(row.fullHeight, x.bh * s)
+        const keep = row.fullWidth + width <= idealRowWidth ||
+          Math.abs(1 - (row.fullWidth + width) / idealRowWidth) < Math.abs(1 - row.fullWidth / idealRowWidth)
+        if (!keep && r !== numRows - 1) break
+        row.windows.push(x)
+        row.fullWidth += width
+      }
+    }
+    let maxRow = null, gridHeight = 0
+    for (const row of rows) {
+      row.windows.sort((a, b) => a.cx - b.cx)
+      if (!maxRow || row.fullWidth > maxRow.fullWidth) maxRow = row
+      gridHeight += row.fullHeight
+    }
+    return {numRows, rows, maxColumns: maxRow.windows.length, gridWidth: maxRow.fullWidth, gridHeight}
+  }
+  function scaleAndSpace(layout) {
+    const hsp = (layout.maxColumns - 1) * sp, vsp = (layout.numRows - 1) * sp
+    const scale = Math.min((area.width - hsp) / layout.gridWidth, (area.height - vsp) / layout.gridHeight, SPREAD_MAX_SCALE)
+    const space = ((layout.gridWidth * scale + hsp) * (layout.gridHeight * scale + vsp)) / (area.width * area.height)
+    layout.scale = scale
+    return [scale, space]
+  }
+  function better(oldScale, oldSpace, scale, space) {
+    const spacePower = (space - oldSpace) * SPACE_WEIGHT, scalePower = (scale - oldScale) * SCALE_WEIGHT
+    if (scale > oldScale && space > oldSpace) return true
+    if (scale > oldScale) return scalePower > spacePower
+    if (space > oldSpace) return spacePower > scalePower
+    return false
+  }
+
+  let layout = null, lastCols = -1, lastScale = 0, lastSpace = 0
+  for (let numRows = 1; wins.length; numRows++) {
+    const cols = Math.ceil(wins.length / numRows)
+    if (cols === lastCols) break
+    const l = computeLayout(numRows)
+    const [scale, space] = scaleAndSpace(l)
+    if (layout && !better(lastScale, lastSpace, scale, space)) break
+    layout = l; lastCols = cols; lastScale = scale; lastSpace = space
+  }
+
+  const out = new Map()
+  if (layout) {
+    const {rows, scale} = layout
+    for (const row of rows) { row.width = row.fullWidth * scale + (row.windows.length - 1) * sp; row.height = row.fullHeight * scale }
+    const heightNoSp = rows.reduce((t, r) => t + r.height, 0), vsp = (rows.length - 1) * sp
+    const addV = Math.min(1, (area.height - vsp) / heightNoSp)
+    let comp = 0, y = 0
+    for (const row of rows) {
+      const hsp = (row.windows.length - 1) * sp, widthNoSp = row.width - hsp
+      const addH = Math.min(1, (area.width - hsp) / widthNoSp)
+      if (addH < addV) { row.add = addH; comp += (addV - addH) * row.height } else row.add = addV
+      row.x = area.x + Math.max(area.width - (widthNoSp * row.add + hsp), 0) / 2
+      row.y = area.y + Math.max(area.height - (heightNoSp + vsp), 0) / 2 + y
+      y += row.height * row.add + sp
+    }
+    comp /= 2
+    for (const row of rows) {
+      const rowY = row.y + comp, rowH = row.height * row.add
+      let x = row.x
+      for (const win of row.windows) {
+        let s = scale * winScale(win) * row.add
+        const cellW = win.bw * s, cellH = win.bh * s
+        s = Math.min(s, SPREAD_MAX_SCALE)
+        const w = win.bw * s, h = win.bh * s
+        const top = rows.length === 1 ? rowY + (rowH - h) / 2 : rowY + rowH - cellH
+        out.set(win.w.id, {u: x + (cellW - w) / 2, v: -top, w, h})
+        x += cellW + sp
+      }
+    }
+  }
+  spreadCache.set(key, out)
+  return out
+}
+
+// The slots drawn now for workspace `w`. When its spread changes (a window
+// opens, closes or moves in or out), windows glide to their new slots over
+// GNOME's 200 ms; a new window appears in place.
+const RELAYOUT_MS = 200
+const easeOutQuad = (t) => 1 - (1 - t) * (1 - t)
+const shown = new Map()
+function overviewSlots(w) {
+  const target = spreadSlots(w.windows), t = now()
+  const s = shown.get(w.id)
+  if (!s) { shown.set(w.id, {target, from: null, t0: 0}); return target }
+  if (s.target !== target) {
+    shown.set(w.id, {target, from: slotsAt(s, t), t0: t})
+    anims.push({kind: "relayout", t0: t, dur: RELAYOUT_MS})
+    kick()
+  }
+  return slotsAt(shown.get(w.id), t)
+}
+function slotsAt(s, t) {
+  const p = (t - s.t0) / RELAYOUT_MS
+  if (!s.from || p >= 1) return s.target
+  const e = easeOutQuad(Math.max(0, p)), out = new Map()
+  for (const [id, b] of s.target) { const a = s.from.get(id); out.set(id, a ? lerpSlot(a, b, e) : b) }
+  return out
 }
 
 function resize() {
@@ -223,13 +356,15 @@ function drawWorkspace(F, w, alpha) {
   path(F, screenPoly)
   ctx.fillStyle = `hsl(${hue} 45% 34%)`
   ctx.fill()
-  if (showsWindows(F))
+  if (showsWindows(F)) {
+    const slots = overviewSlots(w)
     for (const win of w.windows) {
       if (win.id === drag?.win?.id) continue
-      const {body, bar} = windowShape(win)
+      const {body, bar} = slotShape(slots.get(win.id))
       path(F, body); ctx.fillStyle = `rgb(${win.shade},${win.shade},${win.shade + 5})`; ctx.fill()
       path(F, bar); ctx.fillStyle = "#2a2f37"; ctx.fill()
     }
+  }
   ctx.globalAlpha = 1
 }
 
@@ -352,13 +487,16 @@ function draw() {
   window.__stats = {drawMs: dt, avgMs: avg, tiles: vis.size, generated: T.tiles.length, root: view.root, R: view.R}
 }
 
-// The entered workspace drawn as a desktop filling rect r. Windows map their
-// content coordinates linearly onto it, so their places match the overview.
+// The entered workspace drawn as a desktop filling rect r. Content
+// coordinates map linearly onto it. Windows sit at their real places once
+// entered and glide between those and their overview slots while zooming.
 function deskLayout(r) {
   const X = (u) => r.x + (u + 0.96) / 1.92 * r.w, Y = (v) => r.y + (VMAX - v) / (2 * VMAX) * r.h
   const w = S.ws.find((x) => x.tile === desk.tile)
+  const q = deskProgress(), slots = q < 1 && w ? spreadSlots(w.windows) : null
   return (w?.windows ?? []).map((win) => {
-    const x = X(win.u), y = Y(win.v), wd = X(win.u + win.w) - x, ht = Y(win.v - win.h) - y, bar = Y(win.v - BAR) - y
+    const g = slots ? lerpSlot(slots.get(win.id), win, q) : win
+    const x = X(g.u), y = Y(g.v), wd = X(g.u + g.w) - x, ht = Y(g.v - g.h) - y, bar = Y(g.v - BAR) - y
     return {win, x, y, w: wd, h: ht, bar, close: {x: x + wd - bar, y, w: bar, h: bar}}
   })
 }
@@ -416,12 +554,17 @@ function tileRect(tile) {
 }
 // Zooming in grows the tile's rect to the whole canvas; zooming out shrinks it
 // back onto wherever the tile is drawn now.
+// How far the zoom is toward the desktop: 0 is the overview, 1 the desktop.
+function deskProgress() {
+  if (desk.phase === "on") return 1
+  const p = ease(Math.min(1, (now() - desk.t0) / desk.dur))
+  return desk.phase === "in" ? p : 1 - p
+}
 function deskRect() {
   const full = {x: 0, y: 0, w: W, h: H}
   if (desk.phase === "on") return full
-  const p = ease(Math.min(1, (now() - desk.t0) / desk.dur))
-  const [a, b, q] = desk.phase === "in" ? [desk.from, full, p] : [full, tileRect(desk.tile), p]
-  return {x: a.x + (b.x - a.x) * q, y: a.y + (b.y - a.y) * q, w: a.w + (b.w - a.w) * q, h: a.h + (b.h - a.h) * q}
+  const a = desk.phase === "in" ? desk.from : tileRect(desk.tile), q = deskProgress()
+  return {x: a.x + (full.x - a.x) * q, y: a.y + (full.y - a.y) * q, w: a.w + (full.w - a.w) * q, h: a.h + (full.h - a.h) * q}
 }
 
 function focusTile() {
@@ -694,8 +837,11 @@ function deskMove(e) {
 function windowOutlines(tile) {
   const F = (visCache ?? visible()).get(tile), w = wsAtTile().get(tile)?.w
   if (!F || !w || !showsWindows(F)) return []
-  const Fc = content(F, w)
-  return w.windows.map((win, i) => ({i, n: w.windows.length, id: win.id, ws: w.id, shade: win.shade, pts: windowShape(win).body.map((pt) => toScreen(M.apply(Fc, pt))), bar: windowShape(win).bar.map((pt) => toScreen(M.apply(Fc, pt)))}))
+  const Fc = content(F, w), slots = overviewSlots(w)
+  return w.windows.map((win, i) => {
+    const {body, bar} = slotShape(slots.get(win.id))
+    return {i, n: w.windows.length, id: win.id, ws: w.id, shade: win.shade, pts: body.map((pt) => toScreen(M.apply(Fc, pt))), bar: bar.map((pt) => toScreen(M.apply(Fc, pt)))}
+  })
 }
 function windowAt(tile, x, y) {
   const inside = (pts) => {
@@ -764,7 +910,7 @@ function goHome() {
 function build(n) {
   for (const id of timers) clearTimeout(id)
   timers.clear()
-  S = emptyState(); nextWin = 1; desk = null; deskDrag = null; view.root = 0; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
+  S = emptyState(); nextWin = 1; shown.clear(); desk = null; deskDrag = null; view.root = 0; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
   for (let i = 0; i < n; i++) {
     const tile = nearestFree(T, S)
     const r = openWorkspace(T, S, tile, screenDown(tile))
@@ -991,9 +1137,10 @@ window.app = {
   tileAt: (x, y) => hitTest(toDisk(x, y)),
   enters: () => (desk?.phase === "in" ? [{tile: desk.tile, win: desk.pickedIndex}] : []),
   get desk() { return desk && {tile: desk.tile, phase: desk.phase, picked: desk.picked, added: desk.added} },
-  deskLayout: () => (desk ? deskLayout({x: 0, y: 0, w: W, h: H}).map(({win, x, y, w, h, bar, close}) => ({id: win.id, u: win.u, v: win.v, x, y, w, h, bar, close})) : []),
+  deskLayout: () => (desk ? deskLayout(deskRect()).map(({win, x, y, w, h, bar, close}) => ({id: win.id, u: win.u, v: win.v, x, y, w, h, bar, close})) : []),
   deskButtons,
   get deskRect() { return desk && deskRect() },
+  spreadSlots: (id) => { const w = S.ws.find((x) => x.id === id); return w ? [...spreadSlots(w.windows)].map(([wid, g]) => ({id: wid, ...g})) : [] },
   movingFrames: () => anims.filter((a) => a.kind === "move").map((a) => ({id: a.id, F: animFrame(a, now())})),
 }
 
