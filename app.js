@@ -249,6 +249,7 @@ function slideSeg(fromTile, to, via, dur) {
 
 function draw() {
   const t0 = now()
+  if (desk?.phase === "on") { drawDesk({x: 0, y: 0, w: W, h: H}); return }
   ctx.fillStyle = "#05080c"
   ctx.fillRect(0, 0, W, H)
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.fillStyle = "#0b1118"; ctx.fill()
@@ -322,7 +323,7 @@ function draw() {
   rim = groupIndicator(vis)
   drawRim(rim)
   if (rim.alpha !== rim.target) kick()
-  for (const a of anims) if (a.kind === "enter") drawEnter(a, Math.min(1, (t - a.t0) / a.dur))
+  if (desk) drawDesk(deskRect())
   const dt = now() - t0
   frameTimes.push(dt); if (frameTimes.length > 60) frameTimes.shift()
   const avg = frameTimes.reduce((x, y) => x + y, 0) / frameTimes.length
@@ -336,39 +337,75 @@ function draw() {
   window.__stats = {drawMs: dt, avgMs: avg, tiles: vis.size, generated: T.tiles.length, root: view.root, R: view.R}
 }
 
-function drawEnter(a, p) {
-  const [x0, y0] = toScreen(M.center(a.F))
-  const s = 1 - C.abs2(M.center(a.F))
-  const w0 = R * s * 0.9, h0 = w0 * ASPECT
-  const q = ease(Math.min(1, p * 1.6))
-  const w = w0 + (W - w0) * q, h = h0 + (H - h0) * q
-  const x = x0 + (W / 2 - x0) * q, y = y0 + (H / 2 - y0) * q
-  const fade = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3
-  ctx.globalAlpha = 0.9 * fade
-  ctx.fillStyle = a.w ? `hsl(${(a.w.id * 67) % 360} 45% 34%)` : "#1a2532"
-  ctx.fillRect(x - w / 2, y - h / 2, w, h)
-  ctx.font = "600 34px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle"
-  if (a.win) {
-    // The picked window grows from where it was drawn to fill the screen.
-    const corners = [[0, H], [W, H], [W, 0], [0, 0]], n = a.win.pts.length / 4
-    ctx.globalAlpha = fade
-    ctx.beginPath()
-    a.win.pts.forEach(([px, py], i) => {
-      const k = Math.floor(i / n), t = (i % n) / n, c0 = corners[k], c1 = corners[(k + 1) % 4]
-      const tx = c0[0] + (c1[0] - c0[0]) * t, ty = c0[1] + (c1[1] - c0[1]) * t
-      ctx.lineTo(px + (tx - px) * q, py + (ty - py) * q)
-    })
-    ctx.closePath()
-    ctx.shadowColor = "rgba(0,0,0,.7)"; ctx.shadowBlur = 24
-    ctx.fillStyle = `rgb(${a.win.shade},${a.win.shade},${a.win.shade + 5})`; ctx.fill()
-    ctx.shadowBlur = 0
-    ctx.lineWidth = 4; ctx.strokeStyle = "#ffd36b"; ctx.stroke()
-    const cx0 = a.win.pts.reduce((v, pt) => v + pt[0], 0) / a.win.pts.length, cy0 = a.win.pts.reduce((v, pt) => v + pt[1], 0) / a.win.pts.length
-    ctx.fillStyle = "#1a2532"; ctx.fillText(`Picked window ${a.win.i + 1} of ${a.win.n}`, cx0 + (W / 2 - cx0) * q, cy0 + (H / 2 - cy0) * q)
-  } else {
-    ctx.fillStyle = "#fff"; ctx.fillText(`Entered ${a.label}`, x, y)
+// The entered workspace drawn as a desktop filling rect r. Windows map their
+// content coordinates linearly onto it, so their places match the overview.
+function deskLayout(r) {
+  const X = (u) => r.x + (u + 0.96) / 1.92 * r.w, Y = (v) => r.y + (VMAX - v) / (2 * VMAX) * r.h
+  const w = S.ws.find((x) => x.tile === desk.tile)
+  return (w?.windows ?? []).map((win) => {
+    const x = X(win.u), y = Y(win.v), wd = X(win.u + win.w) - x, ht = Y(win.v - win.h) - y, bar = Y(win.v - BAR) - y
+    return {win, x, y, w: wd, h: ht, bar, close: {x: x + wd - bar, y, w: bar, h: bar}}
+  })
+}
+const DESK_BUTTONS = [{run: "leave", label: "Overview"}, {run: "open", label: "+ Window"}]
+const deskButtons = () => DESK_BUTTONS.map((b, i) => ({...b, x: W - 124 * (i + 1), y: 12, w: 112, h: 34}))
+const inRect = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
+
+function drawDesk(r) {
+  const w = S.ws.find((x) => x.tile === desk.tile)
+  const k = r.h / H
+  ctx.save()
+  ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip()
+  ctx.fillStyle = w ? `hsl(${(w.id * 67) % 360} 45% 34%)` : "#1a2532"
+  ctx.fillRect(r.x, r.y, r.w, r.h)
+  const wins = deskLayout(r)
+  if (!wins.length) {
+    ctx.font = `600 ${Math.max(8, 28 * k)}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle"
+    ctx.fillStyle = "rgba(255,255,255,.45)"; ctx.fillText("No windows", r.x + r.w / 2, r.y + r.h / 2)
   }
-  ctx.globalAlpha = 1
+  wins.forEach((b, i) => {
+    const top = i === wins.length - 1, sh = b.win.shade
+    ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 18 * k
+    ctx.fillStyle = `rgb(${sh},${sh},${sh + 5})`; ctx.fillRect(b.x, b.y, b.w, b.h)
+    ctx.shadowBlur = 0
+    ctx.fillStyle = top ? "#2f4f78" : "#2a2f37"; ctx.fillRect(b.x, b.y, b.w, b.bar)
+    ctx.fillStyle = "#c94f4f"; ctx.fillRect(b.close.x + b.bar * 0.2, b.close.y + b.bar * 0.2, b.bar * 0.6, b.bar * 0.6)
+    ctx.font = `${Math.max(6, b.bar * 0.42)}px system-ui`; ctx.textBaseline = "middle"
+    ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.fillText("×", b.close.x + b.bar / 2, b.close.y + b.bar / 2)
+    ctx.textAlign = "left"; ctx.fillStyle = "#e6edf5"; ctx.fillText(`Window ${b.win.id}`, b.x + b.bar * 0.35, b.y + b.bar / 2)
+    if (top) {
+      ctx.lineWidth = desk.phase === "in" && desk.picked === b.win.id ? 4 : 2
+      ctx.strokeStyle = desk.phase === "in" && desk.picked === b.win.id ? "#ffd36b" : "#7fb6ff"
+      ctx.strokeRect(b.x, b.y, b.w, b.h)
+    }
+  })
+  if (desk.phase === "on")
+    for (const b of deskButtons()) {
+      ctx.fillStyle = "rgba(13,19,27,.85)"; ctx.fillRect(b.x, b.y, b.w, b.h)
+      ctx.lineWidth = 1; ctx.strokeStyle = "#4b8ad6"; ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1)
+      ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#d8e2ee"
+      ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2)
+    }
+  ctx.restore()
+}
+
+// Screen rect of a tile's content area as drawn now.
+function tileRect(tile) {
+  const F = screenFrame(tile)
+  if (!F) return {x: W / 2 - 20, y: H / 2 - 12, w: 40, h: 24}
+  const pts = screenPoly.map((pt) => toScreen(M.apply(F, pt)))
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1])
+  const x = Math.min(...xs), y = Math.min(...ys)
+  return {x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y}
+}
+// Zooming in grows the tile's rect to the whole canvas; zooming out shrinks it
+// back onto wherever the tile is drawn now.
+function deskRect() {
+  const full = {x: 0, y: 0, w: W, h: H}
+  if (desk.phase === "on") return full
+  const p = ease(Math.min(1, (now() - desk.t0) / desk.dur))
+  const [a, b, q] = desk.phase === "in" ? [desk.from, full, p] : [full, tileRect(desk.tile), p]
+  return {x: a.x + (b.x - a.x) * q, y: a.y + (b.y - a.y) * q, w: a.w + (b.w - a.w) * q, h: a.h + (b.h - a.h) * q}
 }
 
 function focusTile() {
@@ -473,7 +510,7 @@ function stepAnims() {
       view.root = a.fromTile
       view.R = M.compose(a.screen, M.inv(segRel(a.seg, ease(p))))
     }
-    if (p >= 1) anims.splice(i, 1)
+    if (p >= 1) { anims.splice(i, 1); a.done?.() }
     any = true
   }
   return any
@@ -506,6 +543,7 @@ function report(what, r) {
 // the group; off on its own, it slides over to the nearest tile touching the
 // group, and the view follows it.
 function openWindow() {
+  if (desk) { if (desk.phase === "on") deskOpen(); return }
   const tile = focusTile()
   if (tile === null) return
   const w = S.ws.find((x) => x.tile === tile)
@@ -523,6 +561,11 @@ function openWindow() {
 }
 
 function closeWindow(all = false) {
+  if (desk) {
+    const w = S.ws.find((x) => x.tile === desk.tile)
+    if (desk.phase === "on" && w?.windows.length) for (const v of all ? [...w.windows] : [w.windows.at(-1)]) deskClose(v.id)
+    return
+  }
   const w = focusedWs()
   if (!w) return
   const n = all ? 0 : w.windows.length - 1
@@ -531,16 +574,94 @@ function closeWindow(all = false) {
   doRemove(S.ws.indexOf(w))
 }
 
+// The entered workspace: its tile, the zoom in flight ("in", "out") or "on",
+// and the window picked to enter it. While entered, its workspace stays in the
+// state even with no windows; leaving applies the usual close or open rules.
+let desk = null
+let deskDrag = null
+
 // Enter `tile`; `win` is the window clicked to pick it (its index and screen
 // outline), or null to keep the workspace's focused window.
 function enter(tile, win = null) {
-  const F = screenFrame(tile)
-  const w = S.ws.find((x) => x.tile === tile) ?? null
+  if (desk) return
+  const from = tileRect(tile)
+  const w = S.ws.find((x) => x.tile === tile)
+  if (win && w) raise(w.id, win.id)
   active = tile
   if (tile !== focusTile()) goTo(tile)
-  anims.push({kind: "enter", tile, w, win, label: tileLabel(tile), F: F ?? M.id(), t0: now(), dur: DUR * 3})
+  desk = {tile, phase: "in", t0: now(), dur: DUR * 1.5, from, picked: win?.id ?? null, pickedIndex: win ? win.i : null, added: null}
+  anims.push({kind: "desk", t0: desk.t0, dur: desk.dur, done: () => { desk.phase = "on" }})
   log(`entered ${tileLabel(tile)}${win ? `, focused window ${win.i + 1} of ${win.n}` : ""}`)
   kick()
+}
+
+function leave() {
+  if (desk?.phase !== "on") return
+  deskDrag = null
+  setFocusTile(desk.tile)
+  Object.assign(desk, {phase: "out", t0: now()})
+  anims.push({kind: "desk", t0: desk.t0, dur: desk.dur, done: () => { const {tile, added} = desk; desk = null; settleDesk(tile, added) }})
+  log(`back to the overview from ${tileLabel(desk.tile)}`)
+  kick()
+}
+
+// Apply what was held back while entered: an emptied workspace closes; one
+// opened on an empty tile joins the group like any first window.
+function settleDesk(tile, added) {
+  const i = S.ws.findIndex((x) => x.tile === tile)
+  if (i < 0) return
+  const w = S.ws[i]
+  if (!w.windows.length) { doRemove(i); return }
+  if (w.id !== added) return
+  const r = openWorkspace(T, {...S, ws: S.ws.filter((x) => x !== w), nextId: w.id}, tile)
+  S = {...r.state, nextId: S.nextId, ws: r.state.ws.map((x) => (x.id === w.id ? {...x, windows: w.windows} : x))}
+  focus = {ws: w.id}
+  report(`open the first window on tile ${tile}`, r)
+  applyMoves(r.moves)
+}
+
+function setWindows(id, fn) {
+  S = {...S, ws: S.ws.map((x) => (x.id === id ? {...x, windows: fn(x.windows)} : x))}
+  kick()
+}
+function raise(wsId, winId) {
+  setWindows(wsId, (ws) => [...ws.filter((v) => v.id !== winId), ws.find((v) => v.id === winId)])
+}
+function deskOpen() {
+  const w = S.ws.find((x) => x.tile === desk.tile)
+  if (w) { setWindows(w.id, (ws) => [...ws, newWindow()]); log(`open a window, now a ${wsLabel(S.ws.find((x) => x.id === w.id))}`); return }
+  desk.added = S.nextId
+  S = {...S, ws: [...S.ws, {id: S.nextId, tile: desk.tile, windows: [newWindow()]}], nextId: S.nextId + 1}
+  log(`open the first window on tile ${desk.tile}; it joins the group when you leave`)
+  kick()
+}
+function deskClose(winId) {
+  const w = S.ws.find((x) => x.tile === desk.tile)
+  if (!w) return
+  setWindows(w.id, (ws) => ws.filter((v) => v.id !== winId))
+  log(`close window ${winId}, ${S.ws.find((x) => x.id === w.id).windows.length} left`)
+}
+
+function deskDown(e) {
+  if (desk.phase !== "on") return
+  const x = e.offsetX, y = e.offsetY
+  const b = deskButtons().find((r) => inRect(r, x, y))
+  if (b) { if (b.run === "leave") leave(); else deskOpen(); return }
+  const hit = deskLayout({x: 0, y: 0, w: W, h: H}).findLast((r) => inRect(r, x, y))
+  if (!hit) return
+  const w = S.ws.find((v) => v.tile === desk.tile)
+  if (inRect(hit.close, x, y)) { deskClose(hit.win.id); return }
+  raise(w.id, hit.win.id)
+  if (y < hit.y + hit.bar) deskDrag = {ws: w.id, id: hit.win.id, x, y, u: hit.win.u, v: hit.win.v}
+}
+function deskMove(e) {
+  if (!deskDrag) return
+  const d = deskDrag
+  setWindows(d.ws, (ws) => ws.map((v) => {
+    if (v.id !== d.id) return v
+    const u = d.u + (e.offsetX - d.x) / W * 1.92, nv = d.v - (e.offsetY - d.y) / H * 2 * VMAX
+    return {...v, u: Math.max(-0.96 - v.w + 0.1, Math.min(0.86, u)), v: Math.max(-VMAX + BAR, Math.min(VMAX, nv))}
+  }))
 }
 
 // Screen outlines of the windows drawn in `tile`, bottom to top.
@@ -616,7 +737,7 @@ function goHome() {
 function build(n) {
   for (const id of timers) clearTimeout(id)
   timers.clear()
-  S = emptyState(); nextWin = 1; view.root = 0; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
+  S = emptyState(); nextWin = 1; desk = null; deskDrag = null; view.root = 0; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
   for (let i = 0; i < n; i++) {
     const r = openWorkspace(T, S, nearestFree(T, S))
     S = {...r.state, ws: r.state.ws.map((x) => (x.id === r.added.id ? {...x, windows: Array.from({length: 1 + ((x.id * 7) % 3)}, newWindow)} : x))}
@@ -642,6 +763,7 @@ const RUN = {
 let drag = null
 canvas.addEventListener("pointerdown", (e) => {
   canvas.setPointerCapture(e.pointerId)
+  if (desk) { deskDown(e); return }
   const z = toDisk(e.offsetX, e.offsetY)
   const hit = C.abs2(z) < 1 ? hitTest(z) : null
   const occ = hit !== null ? wsAtTile().get(hit) : null
@@ -651,6 +773,7 @@ canvas.addEventListener("pointerdown", (e) => {
   drag = {x: e.clientX, y: e.clientY, ox: e.offsetX, oy: e.offsetY, last: z, start: z, startTile: hit, moved: false, rotate, ws: null, hover: null, frame: null, candidate: move ? occ?.w.id ?? null : null, grab, win: null}
 })
 canvas.addEventListener("pointermove", (e) => {
+  if (desk) { deskMove(e); return }
   if (!drag) return
   const p = toDisk(e.offsetX, e.offsetY)
   if (drag.ws !== null) {
@@ -698,6 +821,7 @@ canvas.addEventListener("pointermove", (e) => {
   kick()
 })
 canvas.addEventListener("pointerup", (e) => {
+  if (desk) { deskDrag = null; return }
   const d = drag
   drag = null
   if (!d) return
@@ -720,7 +844,7 @@ canvas.addEventListener("pointerup", (e) => {
   else goTo(hit)
 })
 canvas.addEventListener("contextmenu", (e) => e.preventDefault())
-canvas.addEventListener("wheel", (e) => { e.preventDefault(); view.R = M.compose(M.rot(-e.deltaY * 0.003), view.R); kick() }, {passive: false})
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); if (desk) return; view.R = M.compose(M.rot(-e.deltaY * 0.003), view.R); kick() }, {passive: false})
 
 // Neighbor of `tile` on the side the pointer came from (disk point `z`).
 function entryFrom(tile, z) {
@@ -775,6 +899,12 @@ function hitTest(z) {
 }
 
 window.addEventListener("keydown", (e) => {
+  if (desk) {
+    if (e.key === "Escape") leave()
+    else if (e.key === "o") openWindow()
+    else if (e.key === "c") closeWindow(false)
+    return
+  }
   const dirs = {ArrowRight: 0, ArrowUp: Math.PI / 2, ArrowLeft: Math.PI, ArrowDown: -Math.PI / 2}
   if (e.key in dirs) { e.preventDefault(); neighborMove(dirs[e.key]) }
   else if (e.key === "PageDown") { e.preventDefault(); listMove(1) }
@@ -820,7 +950,11 @@ window.app = {
   windowOutlines,
   reach: () => [...reach()],
   tileAt: (x, y) => hitTest(toDisk(x, y)),
-  enters: () => anims.filter((a) => a.kind === "enter").map((a) => ({tile: a.tile, win: a.win ? a.win.i : null})),
+  enters: () => (desk?.phase === "in" ? [{tile: desk.tile, win: desk.pickedIndex}] : []),
+  get desk() { return desk && {tile: desk.tile, phase: desk.phase, picked: desk.picked, added: desk.added} },
+  deskLayout: () => (desk ? deskLayout({x: 0, y: 0, w: W, h: H}).map(({win, x, y, w, h, bar, close}) => ({id: win.id, u: win.u, v: win.v, x, y, w, h, bar, close})) : []),
+  deskButtons,
+  get deskRect() { return desk && deskRect() },
   movingFrames: () => anims.filter((a) => a.kind === "move").map((a) => ({id: a.id, F: animFrame(a, now())})),
 }
 
