@@ -1,4 +1,4 @@
-const {M, C, Tiling, lerpFrame, wrapAngle, emptyState, openWorkspace, nearestFree, removeWorkspace, dropWorkspace, components} = Hyper
+const {M, C, Tiling, lerpFrame, wrapAngle, emptyState, openWorkspace, nearestFree, removeWorkspace, moveWindow, dropWorkspace, components} = Hyper
 
 const OPTIONS = {
   orient: {drift: "Drift", after: "Upright after move", blend: "Upright during move"},
@@ -62,19 +62,21 @@ function rectPoly(u0, v0, u1, v1, n = 8) {
 }
 const VMAX = 0.96 * ASPECT * 1.7
 const screenPoly = rectPoly(-0.96, -VMAX, 0.96, VMAX, 10)
-const winCache = new Map()
-function windowLayouts(id) {
-  if (winCache.has(id)) return winCache.get(id)
+// A window is {id, u, v, w, h, shade}: its top-left corner (u, v) and size in
+// workspace content coordinates. A workspace's `windows` run bottom to top.
+let nextWin = 1
+function newWindow() {
+  const id = nextWin++
   let seed = id * 9301 + 49297
   const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280)
-  const wins = []
-  for (let i = 0; i < 6; i++) {
-    const w = 0.5 + rnd() * 0.8, h = 0.35 + rnd() * 0.5
-    const u0 = -0.9 + rnd() * (1.8 - w), v1 = VMAX - 0.12 - rnd() * (2 * VMAX - h - 0.2)
-    wins.push({body: rectPoly(u0, v1 - h, u0 + w, v1), bar: rectPoly(u0, v1 - 0.09, u0 + w, v1, 6), shade: 200 + Math.floor(rnd() * 50)})
-  }
-  winCache.set(id, wins)
-  return wins
+  const w = 0.5 + rnd() * 0.8, h = 0.35 + rnd() * 0.5
+  return {id, w, h, u: -0.9 + rnd() * (1.8 - w), v: VMAX - 0.12 - rnd() * (2 * VMAX - h - 0.2), shade: 200 + Math.floor(rnd() * 50)}
+}
+const BAR = 0.09
+const shapeCache = new WeakMap()
+function windowShape(win) {
+  if (!shapeCache.has(win)) shapeCache.set(win, {body: rectPoly(win.u, win.v - win.h, win.u + win.w, win.v), bar: rectPoly(win.u, win.v - BAR, win.u + win.w, win.v, 6)})
+  return shapeCache.get(win)
 }
 
 function resize() {
@@ -209,9 +211,11 @@ function drawWorkspace(F, w, alpha) {
   ctx.fillStyle = `hsl(${hue} 45% 34%)`
   ctx.fill()
   if (showsWindows(F))
-    for (const win of windowLayouts(w.id).slice(0, w.wins)) {
-      path(F, win.body); ctx.fillStyle = `rgb(${win.shade},${win.shade},${win.shade + 5})`; ctx.fill()
-      path(F, win.bar); ctx.fillStyle = "#2a2f37"; ctx.fill()
+    for (const win of w.windows) {
+      if (win.id === drag?.win?.id) continue
+      const {body, bar} = windowShape(win)
+      path(F, body); ctx.fillStyle = `rgb(${win.shade},${win.shade},${win.shade + 5})`; ctx.fill()
+      path(F, bar); ctx.fillStyle = "#2a2f37"; ctx.fill()
     }
   ctx.globalAlpha = 1
 }
@@ -304,6 +308,16 @@ function draw() {
     const w = S.ws.find((x) => x.id === drag.ws)
     drawWorkspace(drag.frame, w, 0.85)
   }
+  if (drag?.win) {
+    const hover = drag.hover !== null ? vis.get(drag.hover) : null
+    if (hover) { ctx.setLineDash([6, 4]); path(hover, boundary); ctx.lineWidth = 2.5; ctx.strokeStyle = "#ffd36b"; ctx.stroke(); ctx.setLineDash([]) }
+    const poly = (pts) => { ctx.beginPath(); for (const [x, y] of pts) ctx.lineTo(x + drag.dx, y + drag.dy); ctx.closePath() }
+    ctx.globalAlpha = 0.85
+    poly(drag.win.pts); ctx.fillStyle = `rgb(${drag.win.shade},${drag.win.shade},${drag.win.shade + 5})`; ctx.fill()
+    ctx.lineWidth = 2; ctx.strokeStyle = "#ffd36b"; ctx.stroke()
+    poly(drag.win.bar); ctx.fillStyle = "#2a2f37"; ctx.fill()
+    ctx.globalAlpha = 1
+  }
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.lineWidth = 1; ctx.strokeStyle = "#3b4d61"; ctx.stroke()
   rim = groupIndicator(vis)
   drawRim(rim)
@@ -364,7 +378,7 @@ function focusTile() {
   }
   return focus.tile
 }
-const wsLabel = (w) => `workspace with ${w.wins} window${w.wins === 1 ? "" : "s"}`
+const wsLabel = (w) => `workspace with ${w.windows.length} window${w.windows.length === 1 ? "" : "s"}`
 function tileLabel(tile) {
   const w = S.ws.find((x) => x.tile === tile)
   return w ? wsLabel(w) : "empty workspace"
@@ -496,13 +510,13 @@ function openWindow() {
   if (tile === null) return
   const w = S.ws.find((x) => x.tile === tile)
   if (w) {
-    S = {...S, ws: S.ws.map((x) => (x.id === w.id ? {...x, wins: x.wins + 1} : x))}
-    log(`open a window, now a ${wsLabel({wins: w.wins + 1})}`)
+    S = {...S, ws: S.ws.map((x) => (x.id === w.id ? {...x, windows: [...x.windows, newWindow()]} : x))}
+    log(`open a window, now a ${wsLabel({windows: [...w.windows, null]})}`)
     kick()
     return
   }
   const r = openWorkspace(T, S, tile)
-  S = {...r.state, ws: r.state.ws.map((x) => (x.id === r.added.id ? {...x, wins: 1} : x))}
+  S = {...r.state, ws: r.state.ws.map((x) => (x.id === r.added.id ? {...x, windows: [newWindow()]} : x))}
   focus = {ws: r.added.id}
   report(`open the first window on tile ${tile}`, r)
   applyMoves(r.moves)
@@ -511,9 +525,9 @@ function openWindow() {
 function closeWindow(all = false) {
   const w = focusedWs()
   if (!w) return
-  const n = all ? 0 : w.wins - 1
+  const n = all ? 0 : w.windows.length - 1
   log(`close ${all ? "all windows" : "a window"} in a ${wsLabel(w)} (${n} left)`)
-  if (n > 0) { S = {...S, ws: S.ws.map((x) => (x.id === w.id ? {...x, wins: n} : x))}; kick(); return }
+  if (n > 0) { S = {...S, ws: S.ws.map((x) => (x.id === w.id ? {...x, windows: x.windows.slice(0, n)} : x))}; kick(); return }
   doRemove(S.ws.indexOf(w))
 }
 
@@ -533,7 +547,7 @@ function enter(tile, win = null) {
 function windowOutlines(tile) {
   const F = (visCache ?? visible()).get(tile), w = wsAtTile().get(tile)?.w
   if (!F || !w || !showsWindows(F)) return []
-  return windowLayouts(w.id).slice(0, w.wins).map((win, i) => ({i, n: w.wins, shade: win.shade, pts: win.body.map((pt) => toScreen(M.apply(F, pt)))}))
+  return w.windows.map((win, i) => ({i, n: w.windows.length, id: win.id, ws: w.id, shade: win.shade, pts: windowShape(win).body.map((pt) => toScreen(M.apply(F, pt))), bar: windowShape(win).bar.map((pt) => toScreen(M.apply(F, pt)))}))
 }
 function windowAt(tile, x, y) {
   const inside = (pts) => {
@@ -602,10 +616,10 @@ function goHome() {
 function build(n) {
   for (const id of timers) clearTimeout(id)
   timers.clear()
-  S = emptyState(); view.root = 0; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
+  S = emptyState(); nextWin = 1; view.root = 0; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
   for (let i = 0; i < n; i++) {
     const r = openWorkspace(T, S, nearestFree(T, S))
-    S = {...r.state, ws: r.state.ws.map((x) => (x.id === r.added.id ? {...x, wins: 1 + ((x.id * 7) % 3)} : x))}
+    S = {...r.state, ws: r.state.ws.map((x) => (x.id === r.added.id ? {...x, windows: Array.from({length: 1 + ((x.id * 7) % 3)}, newWindow)} : x))}
   }
   active = S.anchor
   loggedCenter = S.anchor
@@ -633,7 +647,8 @@ canvas.addEventListener("pointerdown", (e) => {
   const occ = hit !== null ? wsAtTile().get(hit) : null
   const rotate = e.button === 2
   const move = !rotate && MOVE_KEYS[opt.moveMod].every((k) => e[k])
-  drag = {x: e.clientX, y: e.clientY, last: z, start: z, startTile: hit, moved: false, rotate, ws: null, hover: null, frame: null, candidate: move ? occ?.w.id ?? null : null}
+  const grab = !move && !rotate && hit !== null && reach().has(hit) ? windowAt(hit, e.offsetX, e.offsetY) : null
+  drag = {x: e.clientX, y: e.clientY, ox: e.offsetX, oy: e.offsetY, last: z, start: z, startTile: hit, moved: false, rotate, ws: null, hover: null, frame: null, candidate: move ? occ?.w.id ?? null : null, grab, win: null}
 })
 canvas.addEventListener("pointermove", (e) => {
   if (!drag) return
@@ -655,6 +670,13 @@ canvas.addEventListener("pointermove", (e) => {
   }
   if (Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 4) drag.moved = true
   if (!drag.moved) return
+  if (drag.grab) {
+    drag.win = drag.grab
+    drag.dx = e.offsetX - drag.ox; drag.dy = e.offsetY - drag.oy
+    drag.hover = C.abs2(p) < 1 ? hitTest(p) : null
+    kick()
+    return
+  }
   if (drag.candidate !== null) {
     drag.ws = drag.candidate
     drag.hover = drag.startTile
@@ -680,6 +702,7 @@ canvas.addEventListener("pointerup", (e) => {
   drag = null
   if (!d) return
   if (d.ws !== null) { drop(d); return }
+  if (d.win) { dropWindow(d); return }
   if (d.moved) {
     if (opt.snap === "on") { rebase(); goTo(view.root) }
     return
@@ -728,6 +751,22 @@ function drop(d) {
   applyMoves(r.moves, {follow: false, starts})
 }
 
+function dropWindow(d) {
+  const src = S.ws.find((x) => x.id === d.win.ws), target = d.hover
+  if (!src || target === null || target === src.tile) { kick(); return }
+  const win = src.windows.find((x) => x.id === d.win.id)
+  const occupant = S.ws.find((x) => x.tile === target)
+  const r = moveWindow(T, S, src.id, target, src.windows.length === 1)
+  const dest = occupant?.id ?? r.added.id
+  S = {...r.state, ws: r.state.ws.map((x) => (x.id === src.id ? {...x, windows: x.windows.filter((v) => v !== win)} : x.id === dest ? {...x, windows: [...(x.windows ?? []), win]} : x))}
+  if (r.removed) {
+    anims.push({kind: "fade", w: {...r.removed, windows: []}, tile: r.removed.tile, t0: now(), dur: DUR})
+    if (focus.ws === r.removed.id) focus = {tile: r.removed.tile}
+  }
+  report(`move a window to ${occupant ? "a workspace" : "an empty tile"} on tile ${target}${r.removed ? ", its last" : ""}`, r)
+  applyMoves(r.moves)
+}
+
 function hitTest(z) {
   for (const [id, F] of visCache ?? visible()) {
     if (T.insideLocal(M.apply(M.inv(F), z))) return id
@@ -774,6 +813,7 @@ window.app = {
   idle: () => !viewAnim && anims.length === 0 && timers.size === 0 && (!rim || rim.alpha === rim.target),
   redraw: () => { draw() },
   pieces: () => components(T, S).length,
+  windows: () => S.ws.map((w) => ({id: w.id, tile: w.tile, wins: w.windows.map((x) => x.id)})),
   get drag() { return drag },
   get rim() { return rim },
   screenAngle,

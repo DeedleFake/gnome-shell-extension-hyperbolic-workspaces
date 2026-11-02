@@ -433,6 +433,18 @@ function removeWorkspace(T, s, idx) {
   return {...finish(T, s, ws, via), removed: s.ws[idx], raw, fallbacks}
 }
 
+// Move one window from workspace `id` to `tile`. With `last`, it was the
+// source's last window and the source leaves the group; an empty target joins
+// it. Then the group is reconnected as for any open or close.
+function moveWindow(T, s, id, tile, last) {
+  const src = s.ws.find((x) => x.id === id)
+  const added = s.ws.some((x) => x.tile === tile) ? null : {id: s.nextId, tile}
+  const raw = [...s.ws.filter((x) => !(last && x.id === id)), ...(added ? [added] : [])]
+  const {ws, fallbacks, via} = connect(T, {...s, ws: raw}, added?.id ?? null)
+  const f = finish(T, {...s, ws: raw}, ws, via)
+  return {...f, state: {...f.state, nextId: s.nextId + (added ? 1 : 0)}, added, removed: last ? src : null, raw, fallbacks}
+}
+
 // Neighbor of `tile` that a drag entering it from `prev` crossed from: `prev`
 // itself when adjacent, else the neighbor closest to `prev`.
 function entryTile(T, tile, prev) {
@@ -468,7 +480,7 @@ function dropWorkspace(T, s, id, tile, from = null) {
   return {...finish(T, s, ws, via), landed: tile, chain, raw, fallbacks}
 }
 
-const api = {C, M, wrapAngle, lerpFrame, Tiling, FILL_ORDERS, fillSequence, emptyState, openWorkspace, nearestFree, components, mapShape, connect, followCenter, removeWorkspace, entryTile, dropWorkspace}
+const api = {C, M, wrapAngle, lerpFrame, Tiling, FILL_ORDERS, fillSequence, emptyState, openWorkspace, nearestFree, components, mapShape, connect, followCenter, removeWorkspace, moveWindow, entryTile, dropWorkspace}
 if (typeof module !== 'undefined') module.exports = api
 else root.Hyper = api
 })(this)
