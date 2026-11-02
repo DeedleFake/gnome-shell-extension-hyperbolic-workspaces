@@ -665,8 +665,9 @@ function entryTile(T, tile, prev) {
 // Then the group is reconnected, with the dropped one sliding back if it is
 // off on its own. Each pushed workspace slides one tile straight on, a
 // tiling symmetry, and its down edge rides it. The dropped one lands with
-// `down` (the caller picks the edge nearest to how it was drawn while
-// dragged); by default, the edge nearest its old one carried straight over.
+// `down`; by default, the edge nearest its old one carried straight over from
+// its old tile, which depends only on the two tiles, never on where in the
+// target the pointer is.
 function dropWorkspace(T, s, id, tile, from = null, down = null) {
   const w = s.ws.find((x) => x.id === id)
   if (tile === w.tile) return {...finish(T, s, s.ws), landed: tile, landedDown: w.down, chain: [], raw: s.ws, fallbacks: 0}

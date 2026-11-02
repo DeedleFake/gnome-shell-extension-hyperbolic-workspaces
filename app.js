@@ -958,13 +958,17 @@ canvas.addEventListener("pointermove", (e) => {
   if (drag.ws !== null) {
     const clamp = (z) => { const r = Math.sqrt(C.abs2(z)); return r > 0.98 ? C.scale(z, 0.98 / r) : z }
     const z = clamp(p)
-    drag.frame = M.compose(M.to(z), M.rot(M.split(drag.frame).alpha))
     const hover = hitTest(z)
     if (hover !== drag.hover) {
       drag.from = hover === null ? null : entryFrom(hover, drag.lastZ ?? z)
       drag.hover = hover
-      drag.preview = hover === null ? null : dropWorkspace(T, S, drag.ws, hover, drag.from, dropDown(hover, drag.frame))
+      drag.preview = hover === null ? null : dropWorkspace(T, S, drag.ws, hover, drag.from)
     }
+    // Over a tile it is drawn as it will land there, slid off to the pointer:
+    // releasing only slides it home, with no turn.
+    const land = hover === null ? null : drag.preview?.landedDown ?? S.ws.find((w) => w.id === drag.ws).down
+    const F = land === null ? null : screenFrame(hover)
+    drag.frame = F ? slideTo(M.compose(F, cq(land)), z) : M.compose(M.to(z), M.rot(M.split(drag.frame).alpha))
     drag.lastZ = z
     drag.moved = true
     kick()
@@ -1041,17 +1045,17 @@ function entryFrom(tile, z) {
   return best
 }
 
-// Down edge for a dragged workspace, drawn with content frame `frame`, landing
-// on `tile`: the edge nearest to how it is drawn, so it turns 45 deg at most.
-function dropDown(tile, frame) {
-  const F = screenFrame(tile)
-  return F ? nearestQ(M.split(M.compose(M.inv(F), frame)).alpha) : null
+// Frame F moved along the line from its center to disk point z, so it ends
+// centered on z with no turn of its own.
+function slideTo(F, z) {
+  const A = M.to(M.center(F))
+  return M.compose(M.compose(M.compose(A, M.to(M.apply(M.inv(A), z))), M.inv(A)), F)
 }
 
 function drop(d) {
   const w = S.ws.find((x) => x.id === d.ws)
   const target = d.hover ?? w.tile
-  const r = d.hover !== null && d.preview ? d.preview : dropWorkspace(T, S, w.id, target, d.from ?? null, dropDown(target, d.frame))
+  const r = d.hover !== null && d.preview ? d.preview : dropWorkspace(T, S, w.id, target, d.from ?? null)
   const base = screenFrame(target)
   const starts = new Map()
   if (base) starts.set(w.id, {tile: target, down: r.landedDown, off: M.compose(M.inv(base), d.frame)})
