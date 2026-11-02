@@ -438,6 +438,9 @@ function mapShape(T, tiles, from, to, turn, turns = null) {
 // (which only differs among the quarter turns of a lone workspace). Symmetries
 // that turn the piece about a point are never used, even when they would move
 // it less.
+// Every candidate puts some piece tile on a free tile bordering `main` (else
+// the image can't touch it), so only those are tried: the search stays at the
+// group's edge and builds no tiles beyond the ones next to it.
 // Returns the tile map and the symmetry G, as a frame relative to piece[0].
 function slidePiece(T, occ, main, piece) {
   const r = piece[0], own = new Set(piece), mainSet = new Set(main)
@@ -445,29 +448,37 @@ function slidePiece(T, occ, main, piece) {
   const F = new Map([[r, M.id()]])
   for (const u of F.keys())
     T.neighbors(u).forEach((n, k) => { if (own.has(n) && !F.has(n)) F.set(n, M.compose(F.get(u), T.rel[k][T.tiles[u].tw[k]])) })
+  const free = (t) => !occ.has(t) || own.has(t)
+  const border = []
+  for (const m of main) for (const n of T.neighbors(m)) if (free(n) && !mainSet.has(n) && !border.includes(n)) border.push(n)
+  const Pr = T.tiles[r].P, seen = new Set()
   let best = null
-  for (const [t, {F: Ft}] of T.frames(r, piece.length === 1 ? 8 : 7)) {
-    if (occ.has(t) && !own.has(t)) continue
-    for (let turn = 0; turn < 4; turn++) {
-      const G = M.compose(Ft, M.rot((turn * Math.PI) / 2))
-      if (!M.isSlide(G)) continue
-      const turns = new Map(), img = mapShape(T, piece, r, t, turn, turns)
-      let ok = true, touches = false
-      for (const v of img.values()) {
-        if (occ.has(v) && !own.has(v)) { ok = false; break }
-        if (!touches && T.neighbors(v).some((n) => mainSet.has(n))) touches = true
+  for (const u of piece) {
+    const Fu = F.get(u), Pu = T.tiles[u].P
+    for (const b of border) {
+      const Pub = M.compose(M.inv(Pu), T.tiles[b].P)
+      for (let turn = 0; turn < 4; turn++) {
+        // The symmetry sending u to b, turned, seen from r.
+        const G = M.compose(M.compose(Fu, M.compose(Pub, M.rot((turn * Math.PI) / 2))), M.inv(Fu))
+        if (!M.isSlide(G)) continue
+        const turns = new Map(), img = mapShape(T, piece, u, b, turn, turns)
+        const key0 = `${img.get(r)}:${turns.get(r)}`
+        if (seen.has(key0)) continue
+        seen.add(key0)
+        let ok = true
+        for (const v of img.values()) if (!free(v)) { ok = false; break }
+        if (!ok) continue
+        let far = 0, total = 0, bend = 0, straight = false
+        for (const Fv of F.values()) {
+          // Seen from v, G is a move to its new spot followed by a turn; no turn
+          // means v's center is on the axis.
+          const D = M.compose(M.inv(Fv), M.compose(G, Fv)), d = M.dist0(D), a = Math.abs(wrapAngle(M.split(D).alpha))
+          far = Math.max(far, d); total += d; bend = Math.max(bend, a)
+          if (a < 1e-6) straight = true
+        }
+        const key = [straight ? 0 : 1, far, total, bend]
+        if (!best || cmpTol(key, best.key) < 0) best = {key, img, turns, G}
       }
-      if (!ok || !touches) continue
-      let far = 0, total = 0, bend = 0, straight = false
-      for (const Fu of F.values()) {
-        // Seen from u, G is a move to its new spot followed by a turn; no turn
-        // means u's center is on the axis.
-        const D = M.compose(M.inv(Fu), M.compose(G, Fu)), d = M.dist0(D), a = Math.abs(wrapAngle(M.split(D).alpha))
-        far = Math.max(far, d); total += d; bend = Math.max(bend, a)
-        if (a < 1e-6) straight = true
-      }
-      const key = [straight ? 0 : 1, far, total, bend]
-      if (!best || cmpTol(key, best.key) < 0) best = {key, img, turns, G}
     }
   }
   return best && {img: best.img, turns: best.turns, root: r, G: best.G}
