@@ -1,3 +1,135 @@
+# Round 6: bounded tiles, rejoin from the group's edge, predictable drops
+
+Before (1adc0dd): node sim.js (5000 ops, seed 7) took 445842 ms. 3000 ops on seeds 23, 7, 1, 99, 1234 grew to 4-5 million tiles and 1-2 GB, about 30 ms and 1500 new tiles per op; the first rejoin at a new spot took 130-750 ms.
+
+## Stay connected, 5000 random ops, seed 7 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 3025 ms
+opens 1770 (1588 away from the group slid over to join it; 2 first windows on an empty plane, where the center moved to them), closes 1715 (907 split the group; 3244 workspaces slid, most in one close 16)
+drops 760: 309 on empty tiles (283 slid back to the group), 451 inserts (avg chain 1.96, max 7); 516 drops split the rest
+window moves 755: 380 took the source's last window, 353 opened an empty tile; 439 split the group
+3860 cut-off pieces moved (7404 workspaces), each by one slide with no turn (291 along an axis that misses the piece, because no straight slide fit; 291 of them lone workspaces; most turn against moving straight 41.8 deg); 818 two-piece splits had a one-tile slide, and took it
+down edges: 7323 slides with a piece and 869 insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on 3045 slides (41.6%) and 113 pushes (13.0%), 38.5% overall; 692 drops turned at most 45 deg to the nearest edge; 0 stages too far to check
+center moved 80 times; fallbacks to one-at-a-time 0; max workspaces 32; 18 prunes; every check passed
+placement calls alone: median 0.2 ms, p90 1.0 ms, p99 3.8 ms, max 10.1 ms; tiles they built per op median 0.0, p90 0.0, max 11
+prunes 18: median 2.0 ms, max 4.6 ms
+per op (ops and checks) median 0.4 ms, p90 1.2 ms, p99 4.1 ms, max 10.2 ms; tiles after op 500:3660 1000:5898 1500:5646 2000:5270 2500:4292 3000:4247 3500:4072 4000:2841 4500:2643 5000:4396; heap 121 MB, peak RSS 269 MB
+
+## Stay connected, 3000 random ops, seed 23 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 1840 ms
+opens 1063 (964 away from the group slid over to join it; 2 first windows on an empty plane, where the center moved to them), closes 1020 (530 split the group; 1876 workspaces slid, most in one close 14)
+drops 444: 198 on empty tiles (177 slid back to the group), 246 inserts (avg chain 1.92, max 7); 302 drops split the rest
+window moves 473: 239 took the source's last window, 224 opened an empty tile; 272 split the group
+2331 cut-off pieces moved (4354 workspaces), each by one slide with no turn (182 along an axis that misses the piece, because no straight slide fit; 182 of them lone workspaces; most turn against moving straight 41.8 deg); 513 two-piece splits had a one-tile slide, and took it
+down edges: 4318 slides with a piece and 471 insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on 1840 slides (42.6%) and 63 pushes (13.4%), 39.7% overall; 410 drops turned at most 45 deg to the nearest edge; 0 stages too far to check
+center moved 54 times; fallbacks to one-at-a-time 0; max workspaces 31; 10 prunes; every check passed
+placement calls alone: median 0.2 ms, p90 1.0 ms, p99 3.9 ms, max 8.7 ms; tiles they built per op median 0.0, p90 2.0, max 9
+prunes 10: median 3.2 ms, max 5.1 ms
+per op (ops and checks) median 0.4 ms, p90 1.3 ms, p99 4.5 ms, max 9.0 ms; tiles after op 300:1874 600:5940 900:3029 1200:3645 1500:3794 1800:4788 2100:5293 2400:5365 2700:5592 3000:4911; heap 51 MB, peak RSS 242 MB
+
+## Stay connected, 3000 random ops, seed 7 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 1734 ms
+opens 1067 (967 away from the group slid over to join it; 2 first windows on an empty plane, where the center moved to them), closes 1032 (545 split the group; 1874 workspaces slid, most in one close 16)
+drops 452: 183 on empty tiles (166 slid back to the group), 269 inserts (avg chain 1.96, max 7); 303 drops split the rest
+window moves 449: 223 took the source's last window, 218 opened an empty tile; 264 split the group
+2339 cut-off pieces moved (4261 workspaces), each by one slide with no turn (174 along an axis that misses the piece, because no straight slide fit; 174 of them lone workspaces; most turn against moving straight 41.8 deg); 490 two-piece splits had a one-tile slide, and took it
+down edges: 4215 slides with a piece and 520 insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on 1740 slides (41.3%) and 68 pushes (13.1%), 38.2% overall; 414 drops turned at most 45 deg to the nearest edge; 0 stages too far to check
+center moved 47 times; fallbacks to one-at-a-time 0; max workspaces 32; 10 prunes; every check passed
+placement calls alone: median 0.2 ms, p90 0.9 ms, p99 3.6 ms, max 8.6 ms; tiles they built per op median 0.0, p90 0.0, max 11
+prunes 10: median 3.1 ms, max 4.5 ms
+per op (ops and checks) median 0.4 ms, p90 1.2 ms, p99 3.9 ms, max 8.9 ms; tiles after op 300:5498 600:5065 900:5001 1200:5401 1500:5646 1800:5326 2100:1695 2400:3020 2700:3556 3000:4247; heap 29 MB, peak RSS 239 MB
+
+## Stay connected, 3000 random ops, seed 1 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 1937 ms
+opens 1062 (937 away from the group slid over to join it; 4 first windows on an empty plane, where the center moved to them), closes 1028 (541 split the group; 1940 workspaces slid, most in one close 17)
+drops 447: 190 on empty tiles (174 slid back to the group), 257 inserts (avg chain 1.74, max 6); 303 drops split the rest
+window moves 463: 233 took the source's last window, 223 opened an empty tile; 278 split the group
+2285 cut-off pieces moved (4461 workspaces), each by one slide with no turn (163 along an axis that misses the piece, because no straight slide fit; 163 of them lone workspaces; most turn against moving straight 41.8 deg); 512 two-piece splits had a one-tile slide, and took it
+down edges: 4426 slides with a piece and 446 insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on 1848 slides (41.8%) and 77 pushes (17.3%), 39.5% overall; 413 drops turned at most 45 deg to the nearest edge; 0 stages too far to check
+center moved 51 times; fallbacks to one-at-a-time 0; max workspaces 32; 11 prunes; every check passed
+placement calls alone: median 0.2 ms, p90 1.0 ms, p99 4.1 ms, max 10.8 ms; tiles they built per op median 0.0, p90 2.0, max 10
+prunes 11: median 3.0 ms, max 4.9 ms
+per op (ops and checks) median 0.4 ms, p90 1.4 ms, p99 4.4 ms, max 11.2 ms; tiles after op 300:5751 600:1768 900:3815 1200:5025 1500:5074 1800:2346 2100:1654 2400:3008 2700:3628 3000:4497; heap 37 MB, peak RSS 240 MB
+
+## Stay connected, 3000 random ops, seed 99 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 1894 ms
+opens 1071 (951 away from the group slid over to join it; 4 first windows on an empty plane, where the center moved to them), closes 1050 (539 split the group; 2047 workspaces slid, most in one close 14)
+drops 441: 214 on empty tiles (190 slid back to the group), 227 inserts (avg chain 1.95, max 6); 312 drops split the rest
+window moves 438: 198 took the source's last window, 202 opened an empty tile; 244 split the group
+2294 cut-off pieces moved (4523 workspaces), each by one slide with no turn (165 along an axis that misses the piece, because no straight slide fit; 165 of them lone workspaces; most turn against moving straight 41.8 deg); 494 two-piece splits had a one-tile slide, and took it
+down edges: 4462 slides with a piece and 436 insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on 1897 slides (42.5%) and 71 pushes (16.3%), 40.2% overall; 386 drops turned at most 45 deg to the nearest edge; 0 stages too far to check
+center moved 71 times; fallbacks to one-at-a-time 0; max workspaces 31; 11 prunes; every check passed
+placement calls alone: median 0.2 ms, p90 1.0 ms, p99 4.1 ms, max 7.4 ms; tiles they built per op median 0.0, p90 2.0, max 7
+prunes 11: median 2.0 ms, max 3.5 ms
+per op (ops and checks) median 0.4 ms, p90 1.3 ms, p99 4.5 ms, max 15.1 ms; tiles after op 300:2643 600:2485 900:2463 1200:1860 1500:1918 1800:3822 2100:3326 2400:4819 2700:5366 3000:4704; heap 86 MB, peak RSS 244 MB
+
+## Stay connected, 3000 random ops, seed 1234 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 1646 ms
+opens 1082 (977 away from the group slid over to join it; 1 first windows on an empty plane, where the center moved to them), closes 1052 (536 split the group; 1800 workspaces slid, most in one close 15)
+drops 420: 176 on empty tiles (159 slid back to the group), 244 inserts (avg chain 2.08, max 7); 286 drops split the rest
+window moves 446: 226 took the source's last window, 223 opened an empty tile; 254 split the group
+2286 cut-off pieces moved (4159 workspaces), each by one slide with no turn (161 along an axis that misses the piece, because no straight slide fit; 161 of them lone workspaces; most turn against moving straight 41.8 deg); 521 two-piece splits had a one-tile slide, and took it
+down edges: 4121 slides with a piece and 504 insert pushes each carried the down edge exactly (windows spun on 0); taking the new tile's own frame instead, windows would have turned on 1672 slides (40.6%) and 63 pushes (12.5%), 37.5% overall; 386 drops turned at most 45 deg to the nearest edge; 0 stages too far to check
+center moved 41 times; fallbacks to one-at-a-time 0; max workspaces 32; 9 prunes; every check passed
+placement calls alone: median 0.2 ms, p90 0.8 ms, p99 3.7 ms, max 6.0 ms; tiles they built per op median 0.0, p90 0.0, max 12
+prunes 9: median 3.0 ms, max 5.0 ms
+per op (ops and checks) median 0.4 ms, p90 1.1 ms, p99 4.0 ms, max 6.5 ms; tiles after op 300:4889 600:4726 900:1742 1200:5287 1500:5689 1800:4623 2100:2708 2400:5862 2700:5423 3000:2820; heap 50 MB, peak RSS 175 MB
+
+## Lone workspace reopened 3 rings out, 200 times (sim-investigation/mini14.js)
+200 lone opens 3 rings out: open median 0.2 ms, p90 0.6, max 1.7; tiles after 10/50/100/200: 201/137/171/239, max 290; prunes 16; heap 10 MB
+Before: 30 times took median 35.4 ms each and left 79292 tiles.
+
+## Neighbor construction vs the old radius search (drop-jump/equiv.js)
+radialFrames=false: rings0-10 16737 vs 16737 tiles, generated 16737 vs 16737, mismatched tiles 0, duplicate positions 0, old 275 ms new 77 ms
+radialFrames=true: rings0-10 16737 vs 16737 tiles, generated 16737 vs 16737, mismatched tiles 0, duplicate positions 0, old 310 ms new 71 ms
+
+## Far travel
+walk back the same 50 steps: ends on tile 0
+walk 50 random steps: far tile 1122, about 19 hyperbolic units from tile 0 (one transform multiplied along the whole path, the old way; NaN means it overflowed)
+walk back the same 200 steps: ends on tile 0
+walk 200 random steps: far tile 5228, about NaN hyperbolic units from tile 0 (one transform multiplied along the whole path, the old way; NaN means it overflowed)
+tiles 5529, vertices checked 4406, not closing after 5 tiles 0, duplicate positions 0
+
+## Browser checks (headless Chrome), same counts as at 1adc0dd
+shots4 exit 0
+shots5 exit 0
+shots6 exit 0
+shots8 exit 0
+shots9 exit 0
+shots11 exit 0
+shots12 rot exit 0
+shots12 ell exit 0
+shots12 spin exit 0
+shots12-drop exit 0
+shots11.out: ok 9 FAIL 0
+shots12-drop.out: ok 10 FAIL 0
+shots12-ell.out: ok 8 FAIL 0
+shots12-rot.out: ok 8 FAIL 0
+shots12-spin.out: ok 8 FAIL 0
+shots4.out: ok 38 FAIL 0
+shots5.out: ok 3 FAIL 0
+shots6.out: ok 40 FAIL 0
+shots8.out: ok 122 FAIL 0
+shots9.out: ok 33 FAIL 0
+shots13 exit 0
+shots14 exit 0
+shots13: pass 36 fail 0
+
+## Drops (shots14.js)
+ok touch: tile 0 -> 5, nine release points give one landing down edge (0)
+ok touch: and one final layout (1 distinct)
+ok touch: while hovering it is drawn at its landing angle (largest turn left 0.0000 deg)
+ok touch: the hover preview equals the result (9/9)
+ok cut: tile 1 -> 17, nine release points give one landing down edge (0)
+ok cut: and one final layout (1 distinct)
+ok cut: while hovering it is drawn at its landing angle (largest turn left 0.0000 deg)
+ok cut: the hover preview equals the result (9/9)
+ok 12 more targets 2-3 tiles out, five release points each: 0 land on more than one down edge
+ok and each is drawn at its landing angle while hovering (largest turn left 0.0000 deg)
+video case: #2 from tile 1 dropped on 18; nearest free spot touching the group 1.62 away, farthest group tile 4.20; landed on 6, 1.62 from the drop
+ok video case lands at the nearest spot touching the group (1.62 vs 1.62)
+ok video case: the preview's landing tile is where it lands (6 vs 6)
+ok group still connected
+pan: tiles after each of 30 pans 4455,5179,5650,6569,7488,3289,4013,4461,5237,5237,5490,5490,6386,7305,3338,4062,4510,5286,5286,5286,5286,6182,3485,4261,4985,5433,6209,2571,3212,3683; prunes 6; group in view after panning false; after Home: center drawn true, 1969 tiles, 7 prunes
+ok panning away frees tiles (6 prunes, at most 7488 tiles)
+ok Home brings the group back after prunes
+ok a drop after prunes still matches its preview
+ok no page errors 
+pass 17 fail 0
+
 # Round 5: window moves; cut-off pieces slide, never turn
 
 ## Stay connected, 2500 random ops, seed 1 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 78373 ms
