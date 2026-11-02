@@ -915,7 +915,8 @@ function goHome() {
 function build(n) {
   for (const id of timers) clearTimeout(id)
   timers.clear()
-  S = emptyState(); nextWin = 1; shown.clear(); desk = null; deskDrag = null; view.root = 0; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
+  // Tile 0 may have been freed; the origin never is.
+  S = emptyState(T.origin); nextWin = 1; shown.clear(); desk = null; deskDrag = null; view.root = T.origin; view.R = M.id(); anims.length = 0; viewAnim = null; lastMove = null
   for (let i = 0; i < n; i++) {
     const tile = nearestFree(T, S)
     const r = openWorkspace(T, S, tile, screenDown(tile))

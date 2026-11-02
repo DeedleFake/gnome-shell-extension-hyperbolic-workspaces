@@ -425,8 +425,8 @@ function fillSequence(T, anchor, order, count, exclude = new Set()) {
 // Placement state: `ws` holds the workspaces that have windows, in the order
 // their first window opened. The center (anchor) starts on the origin tile and
 // follows the group (see followCenter).
-function emptyState() {
-  return {anchor: 0, ws: [], nextId: 1}
+function emptyState(anchor = 0) {
+  return {anchor, ws: [], nextId: 1}
 }
 
 const occupied = (s) => new Set(s.ws.map((w) => w.tile))
@@ -607,19 +607,26 @@ function connect(T, s, mover = null, from = null) {
 }
 
 // The center follows the group: when its tile has no windows but some tile
-// does, it moves to the nearest such tile by edge steps. Ties go to the oldest
-// workspace (first in `ws`). With no windows anywhere it stays put.
+// does, it moves to the nearest such tile by edge steps (by distance past
+// four rings). Ties go to the oldest workspace (first in `ws`). With no
+// windows anywhere it stays put.
 function followCenter(T, ws, anchor) {
   const age = new Map(ws.map((w, i) => [w.tile, i]))
   if (!ws.length || age.has(anchor)) return anchor
   const seen = new Set([anchor])
-  for (let ring = [anchor]; ; ) {
+  let ring = [anchor]
+  for (let d = 0; d < 4; d++) {
     const next = []
     for (const t of ring) for (const n of T.neighbors(t)) if (!seen.has(n)) { seen.add(n); next.push(n) }
     const hits = next.filter((t) => age.has(t))
     if (hits.length) return hits.reduce((a, b) => (age.get(a) < age.get(b) ? a : b))
     ring = next
   }
+  // Farther than that only happens when the first window opens far from an
+  // empty plane's center; rings out there would build thousands of tiles, so
+  // take the nearest by distance instead.
+  const key = (t) => [Math.round(T.dist(anchor, t) * 1e6), age.get(t)]
+  return ws.map((w) => w.tile).reduce((a, b) => (cmp(key(b), key(a)) < 0 ? b : a))
 }
 
 function finish(T, s, ws, via = new Map()) {

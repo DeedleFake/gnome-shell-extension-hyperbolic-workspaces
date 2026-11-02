@@ -145,7 +145,7 @@ for (let i = 0; i < OPS; i++) {
   const anchorBefore = s.anchor
   if (s.ws.length < 1 || (s.ws.length < 30 && x < 0.4)) {
     const occ = new Set(s.ws.map((v) => v.tile))
-    const near = s.ws.length ? [...T.rings(pick(s.ws).tile, 5).keys()] : [...T.rings(0, 4).keys()]
+    const near = s.ws.length ? [...T.rings(pick(s.ws).tile, 5).keys()] : [...T.rings(s.anchor, 4).keys()]
     const tile = pick(near.filter((t) => !occ.has(t)))
     const r = openWorkspace(T, s, tile, (i * 3 + tile) % 4)
     checkDown(s, r, "open")
@@ -236,4 +236,4 @@ const qs = (xs, p) => [...xs].sort((a, b) => a - b)[Math.min(xs.length - 1, Math
 console.log(`placement calls alone: median ${qs(callOnly, 0.5)} ms, p90 ${qs(callOnly, 0.9)} ms, p99 ${qs(callOnly, 0.99)} ms, max ${Math.max(...callOnly).toFixed(1)} ms; tiles they built per op median ${qs(tilesBuilt, 0.5)}, p90 ${qs(tilesBuilt, 0.9)}, max ${Math.max(...tilesBuilt)}`)
 console.log(`prunes ${pruneMs.length}: median ${qs(pruneMs.length ? pruneMs : [0], 0.5)} ms, max ${Math.max(0, ...pruneMs).toFixed(1)} ms`)
 const q = (p) => [...opMs].sort((a, b) => a - b)[Math.min(opMs.length - 1, Math.floor(p * opMs.length))].toFixed(1)
-console.log(`per op (ops and checks) median ${q(0.5)} ms, p90 ${q(0.9)} ms, p99 ${q(0.99)} ms, max ${Math.max(...opMs).toFixed(1)} ms; tiles after op ${samples.join(' ')}; heap ${(process.memoryUsage().heapUsed / 1e6).toFixed(0)} MB`)
+console.log(`per op (ops and checks) median ${q(0.5)} ms, p90 ${q(0.9)} ms, p99 ${q(0.99)} ms, max ${Math.max(...opMs).toFixed(1)} ms; tiles after op ${samples.join(' ')}; heap ${(process.memoryUsage().heapUsed / 1e6).toFixed(0)} MB, peak RSS ${(process.resourceUsage().maxRSS / 1e3).toFixed(0)} MB`)
