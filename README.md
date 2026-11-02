@@ -5,7 +5,7 @@ Live demo: https://deedlefake.github.io/gnome-shell-extension-hyperbolic-workspa
 Every tile is a workspace. The colored ones have windows and form one connected group; the rest are empty and look like the bare grid.
 
 Controls:
-- Click any tile to center it. Click the centered one to enter it, empty or not.
+- Windows take clicks in the focused tile and in every tile touching it, by an edge or just a corner; those tiles' outlines are a little brighter. Clicking a window there leaves the overview with that window focused: it grows to fill the screen. Clicking anywhere else in the focused tile enters it, empty or not, keeping whichever window was focused. Clicking any other spot on a tile focuses that tile; the view centers it.
 - Drag to pan, even when the drag starts on a workspace. Right-drag or the wheel rotates.
 - Hold the move key and drag a workspace to move it. The move key is Shift by default; the side panel switches it to Alt, Ctrl or Ctrl+Alt. Meta is left out because the browser and desktop take it. While you hover, the plane previews the result. Drop it on any empty tile; if that tile doesn't touch the group, it lands there and then slides back to the nearest tile that does. Drop it on another workspace to insert it there: that workspace, and any in a straight line behind it, move one tile on in the direction you came from, up to the first empty tile.
 - Arrows move to a neighbor tile. PgUp/PgDn walk the workspaces with windows. Home or "Back to center" returns to the center tile, upright. A small ring marks it.

@@ -198,8 +198,8 @@ function wsAtTile() {
   return m
 }
 
+const showsWindows = (F) => (1 - C.abs2(M.center(F))) * R > 25
 function drawWorkspace(F, w, alpha) {
-  const scale = 1 - C.abs2(M.center(F))
   ctx.globalAlpha = alpha
   const hue = (w.id * 67) % 360
   path(F, boundary)
@@ -208,7 +208,7 @@ function drawWorkspace(F, w, alpha) {
   path(F, screenPoly)
   ctx.fillStyle = `hsl(${hue} 45% 34%)`
   ctx.fill()
-  if (scale * R > 25)
+  if (showsWindows(F))
     for (const win of windowLayouts(w.id).slice(0, w.wins)) {
       path(F, win.body); ctx.fillStyle = `rgb(${win.shade},${win.shade},${win.shade + 5})`; ctx.fill()
       path(F, win.bar); ctx.fillStyle = "#2a2f37"; ctx.fill()
@@ -254,12 +254,13 @@ function draw() {
   const occ = pv ? new Map(pv.state.ws.map((w) => [w.tile, {w: S.ws.find((x) => x.id === w.id)}])) : wsAtTile()
   const hidden = new Set(anims.filter((a) => a.kind === "move").map((a) => a.id))
   if (drag?.ws) hidden.add(drag.ws)
+  const near = reach()
   for (const [id, F] of vis) {
     const o = occ.get(id)
     if (o && !hidden.has(o.w.id)) drawWorkspace(F, o.w, pv && pv.moves.some((m) => m.id === o.w.id) ? 0.6 : 1)
     path(F, boundary)
     ctx.lineWidth = 1
-    ctx.strokeStyle = "#2a3a4c"
+    ctx.strokeStyle = near.has(id) ? "#3f5873" : "#2a3a4c"
     ctx.stroke()
   }
   const t = now()
@@ -328,11 +329,31 @@ function drawEnter(a, p) {
   const q = ease(Math.min(1, p * 1.6))
   const w = w0 + (W - w0) * q, h = h0 + (H - h0) * q
   const x = x0 + (W / 2 - x0) * q, y = y0 + (H / 2 - y0) * q
-  ctx.globalAlpha = p < 0.7 ? 0.9 : 0.9 * (1 - (p - 0.7) / 0.3)
+  const fade = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3
+  ctx.globalAlpha = 0.9 * fade
   ctx.fillStyle = a.w ? `hsl(${(a.w.id * 67) % 360} 45% 34%)` : "#1a2532"
   ctx.fillRect(x - w / 2, y - h / 2, w, h)
   ctx.font = "600 34px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle"
-  ctx.fillStyle = "#fff"; ctx.fillText(`Entered ${a.label}`, x, y)
+  if (a.win) {
+    // The picked window grows from where it was drawn to fill the screen.
+    const corners = [[0, H], [W, H], [W, 0], [0, 0]], n = a.win.pts.length / 4
+    ctx.globalAlpha = fade
+    ctx.beginPath()
+    a.win.pts.forEach(([px, py], i) => {
+      const k = Math.floor(i / n), t = (i % n) / n, c0 = corners[k], c1 = corners[(k + 1) % 4]
+      const tx = c0[0] + (c1[0] - c0[0]) * t, ty = c0[1] + (c1[1] - c0[1]) * t
+      ctx.lineTo(px + (tx - px) * q, py + (ty - py) * q)
+    })
+    ctx.closePath()
+    ctx.shadowColor = "rgba(0,0,0,.7)"; ctx.shadowBlur = 24
+    ctx.fillStyle = `rgb(${a.win.shade},${a.win.shade},${a.win.shade + 5})`; ctx.fill()
+    ctx.shadowBlur = 0
+    ctx.lineWidth = 4; ctx.strokeStyle = "#ffd36b"; ctx.stroke()
+    const cx0 = a.win.pts.reduce((v, pt) => v + pt[0], 0) / a.win.pts.length, cy0 = a.win.pts.reduce((v, pt) => v + pt[1], 0) / a.win.pts.length
+    ctx.fillStyle = "#1a2532"; ctx.fillText(`Picked window ${a.win.i + 1} of ${a.win.n}`, cx0 + (W / 2 - cx0) * q, cy0 + (H / 2 - cy0) * q)
+  } else {
+    ctx.fillStyle = "#fff"; ctx.fillText(`Entered ${a.label}`, x, y)
+  }
   ctx.globalAlpha = 1
 }
 
@@ -349,6 +370,21 @@ function tileLabel(tile) {
   return w ? wsLabel(w) : "empty workspace"
 }
 const focusLabel = () => { const t = focusTile(); return t === null ? "none" : tileLabel(t) }
+// Tiles whose windows take clicks: the focused one and every tile sharing an
+// edge or a corner with it.
+const CORNERS = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([u, v]) => T.local(u, v))
+const reachCache = new Map()
+function reach() {
+  const f = focusTile()
+  if (f === null) return new Set()
+  if (!reachCache.has(f)) {
+    const near = (a, b) => C.abs2(C.add(a, C.scale(b, -1))) < 1e-9
+    const out = new Set()
+    for (const [t, {F}] of T.frames(f, 2)) if (CORNERS.some((c) => CORNERS.some((d) => near(M.apply(F, d), c)))) out.add(t)
+    reachCache.set(f, out)
+  }
+  return reachCache.get(f)
+}
 const focusedWs = () => S.ws.find((x) => x.id === focus.ws) ?? null
 
 function setFocusTile(tile) {
@@ -481,13 +517,34 @@ function closeWindow(all = false) {
   doRemove(S.ws.indexOf(w))
 }
 
-function enter(tile) {
+// Enter `tile`; `win` is the window clicked to pick it (its index and screen
+// outline), or null to keep the workspace's focused window.
+function enter(tile, win = null) {
   const F = screenFrame(tile)
   const w = S.ws.find((x) => x.tile === tile) ?? null
   active = tile
-  anims.push({kind: "enter", w, label: tileLabel(tile), F: F ?? M.id(), t0: now(), dur: DUR * 3})
-  log(`entered ${tileLabel(tile)}`)
+  if (tile !== focusTile()) goTo(tile)
+  anims.push({kind: "enter", tile, w, win, label: tileLabel(tile), F: F ?? M.id(), t0: now(), dur: DUR * 3})
+  log(`entered ${tileLabel(tile)}${win ? `, focused window ${win.i + 1} of ${win.n}` : ""}`)
   kick()
+}
+
+// Screen outlines of the windows drawn in `tile`, bottom to top.
+function windowOutlines(tile) {
+  const F = (visCache ?? visible()).get(tile), w = wsAtTile().get(tile)?.w
+  if (!F || !w || !showsWindows(F)) return []
+  return windowLayouts(w.id).slice(0, w.wins).map((win, i) => ({i, n: w.wins, shade: win.shade, pts: win.body.map((pt) => toScreen(M.apply(F, pt)))}))
+}
+function windowAt(tile, x, y) {
+  const inside = (pts) => {
+    let c = false
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, yi] = pts[i], [xj, yj] = pts[j]
+      if ((yi > y) !== (yj > y) && x < xi + (xj - xi) * (y - yi) / (yj - yi)) c = !c
+    }
+    return c
+  }
+  return windowOutlines(tile).findLast((o) => inside(o.pts)) ?? null
 }
 
 // Every way a workspace loses its last window ends here. The tile stays where
@@ -635,8 +692,8 @@ canvas.addEventListener("pointerup", (e) => {
   }
   const hit = hitTest(z)
   if (hit === null) return
-  const centered = !viewAnim && focusTile() === hit && C.abs2(M.center(screenFrame(hit))) < 1e-6
-  if (centered) enter(hit)
+  const win = reach().has(hit) ? windowAt(hit, e.offsetX, e.offsetY) : null
+  if (win || hit === focusTile()) enter(hit, win)
   else goTo(hit)
 })
 canvas.addEventListener("contextmenu", (e) => e.preventDefault())
@@ -720,6 +777,10 @@ window.app = {
   get drag() { return drag },
   get rim() { return rim },
   screenAngle,
+  windowOutlines,
+  reach: () => [...reach()],
+  tileAt: (x, y) => hitTest(toDisk(x, y)),
+  enters: () => anims.filter((a) => a.kind === "enter").map((a) => ({tile: a.tile, win: a.win ? a.win.i : null})),
   movingFrames: () => anims.filter((a) => a.kind === "move").map((a) => ({id: a.id, F: animFrame(a, now())})),
 }
 
