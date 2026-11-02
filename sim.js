@@ -3,8 +3,8 @@
 // Checks after every operation, from the outside: one connected group, the
 // center on a tile with windows, no overlaps, no lost workspaces, and nothing
 // moves except the insert chain, a newly opened far workspace, and pieces that
-// were cut off (each sliding as one rigid shape).
-const {Tiling, emptyState, openWorkspace, removeWorkspace, moveWindow, dropWorkspace, components, mapShape} = require("./hyper.js")
+// were cut off (each sliding as one rigid shape, never turning).
+const {M, wrapAngle, Tiling, emptyState, openWorkspace, removeWorkspace, moveWindow, dropWorkspace, components, mapShape} = require("./hyper.js")
 const T = new Tiling(4, 5)
 const OPS = +(process.argv[2] ?? 5000)
 const SEED = +(process.argv[3] ?? 7)
@@ -22,14 +22,21 @@ function checkGroup(s, what) {
   if (s.ws.length && !tiles.includes(s.anchor)) fail(`${what}: center tile has no windows`, {anchor: s.anchor, tiles})
 }
 
-// Some turn of the tiling symmetry that takes c[0] to `to` sends every member to `dest`'s tile.
-const rigidImage = (c, to, dest) => [0, 1, 2, 3].some((turn) => { const img = mapShape(T, c, c[0], to, turn); return c.every((u) => img.get(u) === dest(u)) })
+// The tiling symmetry that takes c[0] to `to`, turned by `turn` quarter turns.
+const symmetry = (c, to, turn) => M.compose(T.relFrame(c[0], to, 8), M.rot((turn * Math.PI) / 2))
+// Is the center of the tile at frame Fu (relative to the symmetry's frame) on G's axis?
+// How far it turns against moving straight to its new spot, in degrees.
+const bend = (G, Fu) => (Math.abs(wrapAngle(M.split(M.compose(M.inv(Fu), M.compose(G, Fu))).alpha)) * 180) / Math.PI
+const onAxis = (G, Fu) => bend(G, Fu) < 1e-4
+// The turns of the symmetry taking c[0] to `to` that send every member to `dest`'s tile.
+const rigidTurns = (c, to, dest) => [0, 1, 2, 3].filter((turn) => { const img = mapShape(T, c, c[0], to, turn); return c.every((u) => img.get(u) === dest(u)) })
 
 // Symmetries that move every member of `c` to an edge-adjacent tile and leave it
 // on free tiles touching the rest of the group.
 function oneStepSlides(c, others) {
   const out = []
   for (const n of T.neighbors(c[0])) for (let turn = 0; turn < 4; turn++) {
+    if (!M.isSlide(symmetry(c, n, turn))) continue
     const img = mapShape(T, c, c[0], n, turn)
     if (c.every((u) => adjacent(u, img.get(u)) && !others.has(img.get(u))) && c.some((u) => T.neighbors(img.get(u)).some((x) => others.has(x)))) out.push(img)
   }
@@ -37,8 +44,9 @@ function oneStepSlides(c, others) {
 }
 
 // raw -> final may move only pieces cut off from some biggest piece, each as the
-// rigid image of its own tiles under one orientation-preserving tiling symmetry.
-// With exactly two pieces, a one-tile slide wins whenever one reconnects them.
+// rigid image of its own tiles under one tiling symmetry that is a slide
+// (a translation, no turn about any point). With exactly two pieces, a one-tile
+// slide wins whenever one reconnects them.
 function checkRejoin(raw, final, what) {
   const before = tilesOf(raw), after = tilesOf(final)
   if (before.size !== after.size || [...before.keys()].some((id) => !after.has(id))) fail(`${what}: lost a workspace`)
@@ -52,7 +60,15 @@ function checkRejoin(raw, final, what) {
     const ids = c.map((t) => byTile.get(t))
     const dest = (u) => after.get(byTile.get(u))
     if (!still(c)) {
-      if (!rigidImage(c, dest(c[0]), dest)) fail(`${what}: a piece moved but not as one rigid block`, {c, to: c.map(dest)})
+      const turns = rigidTurns(c, dest(c[0]), dest)
+      if (!turns.length) fail(`${what}: a piece moved but not as one rigid block`, {c, to: c.map(dest)})
+      const slides = turns.map((turn) => symmetry(c, dest(c[0]), turn)).filter(M.isSlide)
+      if (!slides.length) fail(`${what}: a piece turned instead of sliding`, {c, to: c.map(dest)})
+      st.pieces++; st.pieceTiles += c.length
+      if (!slides.some((G) => c.some((u) => onAxis(G, T.relFrame(c[0], u, 8))))) {
+        st.offAxis++; if (c.length === 1) st.offAxisLone++
+        st.maxBend = Math.max(st.maxBend, Math.min(...slides.map((G) => Math.max(...c.map((u) => bend(G, T.relFrame(c[0], u, 8)))))))
+      }
       if (comps.length === 2) {
         const others = new Set(comps.find((x) => x !== c))
         const slides = oneStepSlides(c, others)
@@ -67,7 +83,7 @@ function checkRejoin(raw, final, what) {
 }
 
 let s = emptyState()
-const st = {opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0, centerMoves: 0, oneStep: 0, winMoves: 0, winLast: 0, winNew: 0, winSplits: 0}
+const st = {opens: 0, joined: 0, firstAway: 0, removes: 0, splits: 0, slidRem: 0, maxPiece: 0, drops: 0, far: 0, slidBack: 0, inserts: 0, chainMax: 0, chainSum: 0, dropSplits: 0, fallbacks: 0, maxN: 0, noMove: 0, centerMoves: 0, oneStep: 0, winMoves: 0, winLast: 0, winNew: 0, winSplits: 0, pieces: 0, pieceTiles: 0, offAxis: 0, offAxisLone: 0, maxBend: 0}
 const t0 = Date.now()
 for (let i = 0; i < OPS; i++) {
   const x = rnd()
@@ -149,5 +165,5 @@ console.log(`## Stay connected, ${OPS} random ops, seed ${SEED} (40% open a firs
 console.log(`opens ${st.opens} (${st.joined} away from the group slid over to join it; ${st.firstAway} first windows on an empty plane, where the center moved to them), closes ${st.removes} (${st.splits} split the group; ${st.slidRem} workspaces slid, most in one close ${st.maxPiece})`)
 console.log(`drops ${st.drops}: ${st.far} on empty tiles (${st.slidBack} slid back to the group), ${st.inserts} inserts (avg chain ${(st.chainSum / Math.max(1, st.inserts)).toFixed(2)}, max ${st.chainMax}); ${st.dropSplits} drops split the rest`)
 console.log(`window moves ${st.winMoves}: ${st.winLast} took the source's last window, ${st.winNew} opened an empty tile; ${st.winSplits} split the group`)
-console.log(`${st.oneStep} two-piece splits had a one-tile slide, and took it`)
+console.log(`${st.pieces} cut-off pieces moved (${st.pieceTiles} workspaces), each by one slide with no turn (${st.offAxis} along an axis that misses the piece, because no straight slide fit; ${st.offAxisLone} of them lone workspaces; most turn against moving straight ${st.maxBend.toFixed(1)} deg); ${st.oneStep} two-piece splits had a one-tile slide, and took it`)
 console.log(`center moved ${st.centerMoves} times; fallbacks to one-at-a-time ${st.fallbacks}; max workspaces ${st.maxN}; every check passed`)

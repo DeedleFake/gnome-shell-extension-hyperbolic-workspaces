@@ -46,6 +46,18 @@ const M = {
   dist0: (f) => Math.acosh(Math.max(1, 2 * C.abs2(f.a) - 1)),
   // Hyperboloid x/y of f(0), used as a lookup key.
   hyperXY: (f) => C.scale(C.mul(f.a, f.b), 2),
+  // A slide: a translation along some geodesic, with no fixed point in the disk
+  // and so no turn about any point. Half the trace is Re(a); |Re(a)| < 1 is a
+  // rotation, and tiling symmetries are never parabolic (|Re(a)| = 1).
+  isSlide: (f) => Math.abs(f.a[0]) > 1 + 1e-9,
+  // f^t for a slide f: the point t of the way along its one-parameter group,
+  // so every frame of the motion is itself a slide along the same axis.
+  slidePow: (f, t) => {
+    if (f.a[0] < 0) f = {a: C.scale(f.a, -1), b: C.scale(f.b, -1)}
+    const l = f.a[0] + Math.sqrt(f.a[0] * f.a[0] - 1), d = l - 1 / l
+    const p = l ** t, q = l ** -t
+    return M.norm({a: C.scale(C.add(C.scale(C.add(f.a, [-1 / l, 0]), p), C.scale(C.add(f.a, [-l, 0]), -q)), 1 / d), b: C.scale(f.b, (p - q) / d)})
+  },
 }
 
 const wrapAngle = (t) => Math.atan2(Math.sin(t), Math.cos(t))
@@ -241,6 +253,12 @@ const FILL_ORDERS = {
   },
 }
 
+// cmp with distances equal within 1e-9.
+const cmpTol = (x, y) => {
+  for (let i = 0; i < x.length; i++) if (Math.abs(x[i] - y[i]) > 1e-9) return x[i] < y[i] ? -1 : 1
+  return 0
+}
+
 const cmp = (x, y) => {
   for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1
   return 0
@@ -333,10 +351,16 @@ function mapShape(T, tiles, from, to, turn) {
 }
 
 // Slide `piece` so it touches `main`, keeping its shape: try every tiling
-// symmetry that lands it on free tiles next to `main` and keep the one whose
-// farthest-moving workspace moves least, then the least total travel. Total
-// travel alone ties a one-tile slide of a row with turning the row about its
-// inner end, which sends the outer workspace over the inner one.
+// symmetry that is a slide (see M.isSlide) and lands it on free tiles next to
+// `main`. Prefer a straight slide, whose axis runs through the center of one of
+// the piece's workspaces: that one moves straight along its line of tiles and
+// the rest keep beside it. A slide whose axis misses the piece is a slide too,
+// but on screen it swings the piece around a far point, so it is only used
+// when no straight one fits. Then the farthest-moving workspace moves least,
+// then the least total travel, then the least turn against moving straight
+// (which only differs among the quarter turns of a lone workspace). Symmetries
+// that turn the piece about a point are never used, even when they would move
+// it less.
 // Returns the tile map and the symmetry G, as a frame relative to piece[0].
 function slidePiece(T, occ, main, piece) {
   const r = piece[0], own = new Set(piece), mainSet = new Set(main)
@@ -347,7 +371,9 @@ function slidePiece(T, occ, main, piece) {
   let best = null
   for (const [t, {F: Ft}] of T.frames(r, piece.length === 1 ? 8 : 7)) {
     if (occ.has(t) && !own.has(t)) continue
-    for (let turn = 0; turn < (piece.length === 1 ? 1 : 4); turn++) {
+    for (let turn = 0; turn < 4; turn++) {
+      const G = M.compose(Ft, M.rot((turn * Math.PI) / 2))
+      if (!M.isSlide(G)) continue
       const img = mapShape(T, piece, r, t, turn)
       let ok = true, touches = false
       for (const v of img.values()) {
@@ -355,13 +381,16 @@ function slidePiece(T, occ, main, piece) {
         if (!touches && T.neighbors(v).some((n) => mainSet.has(n))) touches = true
       }
       if (!ok || !touches) continue
-      const G = M.compose(Ft, M.rot((turn * Math.PI) / 2))
-      let far = 0, total = 0
+      let far = 0, total = 0, bend = 0, straight = false
       for (const Fu of F.values()) {
-        const d = M.dist0(M.compose(M.inv(Fu), M.compose(G, Fu)))
-        far = Math.max(far, d); total += d
+        // Seen from u, G is a move to its new spot followed by a turn; no turn
+        // means u's center is on the axis.
+        const D = M.compose(M.inv(Fu), M.compose(G, Fu)), d = M.dist0(D), a = Math.abs(wrapAngle(M.split(D).alpha))
+        far = Math.max(far, d); total += d; bend = Math.max(bend, a)
+        if (a < 1e-6) straight = true
       }
-      if (!best || far < best.far - 1e-9 || (far < best.far + 1e-9 && total < best.total - 1e-9)) best = {far, total, img, G}
+      const key = [straight ? 0 : 1, far, total, bend]
+      if (!best || cmpTol(key, best.key) < 0) best = {key, img, G}
     }
   }
   return best && {img: best.img, root: r, G: best.G}
@@ -389,7 +418,7 @@ function connect(T, s, mover = null) {
     const img = new Map(), motion = new Map()
     if (slid) for (const u of piece) { img.set(u, slid.img.get(u)); motion.set(u, slid) }
     else {
-      // No symmetry fits within reach: move them one at a time instead.
+      // No slide fits within reach: move them one at a time instead.
       fallbacks++
       for (const u of piece) {
         occ.delete(u)

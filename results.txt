@@ -1,3 +1,24 @@
+# Round 5: window moves; cut-off pieces slide, never turn
+
+## Stay connected, 2500 random ops, seed 1 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 78373 ms
+opens 904 (807 away from the group slid over to join it; 4 first windows on an empty plane, where the center moved to them), closes 858 (446 split the group; 1538 workspaces slid, most in one close 16)
+drops 379: 163 on empty tiles (149 slid back to the group), 216 inserts (avg chain 2.00, max 11); 262 drops split the rest
+window moves 359: 190 took the source's last window, 172 opened an empty tile; 221 split the group
+1961 cut-off pieces moved (3731 workspaces), each by one slide with no turn (129 along an axis that misses the piece, because no straight slide fit; 129 of them lone workspaces; most turn against moving straight 41.8 deg); 461 two-piece splits had a one-tile slide, and took it
+center moved 49 times; fallbacks to one-at-a-time 0; max workspaces 32; every check passed
+## Stay connected, 2500 random ops, seed 7 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 78467 ms
+opens 902 (822 away from the group slid over to join it; 2 first windows on an empty plane, where the center moved to them), closes 855 (431 split the group; 1394 workspaces slid, most in one close 17)
+drops 369: 152 on empty tiles (140 slid back to the group), 217 inserts (avg chain 1.82, max 6); 263 drops split the rest
+window moves 374: 191 took the source's last window, 172 opened an empty tile; 227 split the group
+1956 cut-off pieces moved (3514 workspaces), each by one slide with no turn (145 along an axis that misses the piece, because no straight slide fit; 145 of them lone workspaces; most turn against moving straight 41.8 deg); 456 two-piece splits had a one-tile slide, and took it
+center moved 43 times; fallbacks to one-at-a-time 0; max workspaces 31; every check passed
+## Stay connected, 2500 random ops, seed 11 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 15% drag within 5 tiles, 15% move one window to a tile within 5; up to 30 workspaces), 72965 ms
+opens 899 (798 away from the group slid over to join it; 1 first windows on an empty plane, where the center moved to them), closes 881 (459 split the group; 1624 workspaces slid, most in one close 15)
+drops 373: 182 on empty tiles (157 slid back to the group), 191 inserts (avg chain 1.88, max 6); 259 drops split the rest
+window moves 347: 160 took the source's last window, 171 opened an empty tile; 193 split the group
+1930 cut-off pieces moved (3630 workspaces), each by one slide with no turn (151 along an axis that misses the piece, because no straight slide fit; 151 of them lone workspaces; most turn against moving straight 41.8 deg); 410 two-piece splits had a one-tile slide, and took it
+center moved 39 times; fallbacks to one-at-a-time 0; max workspaces 32; every check passed
+
 # Round 4: center follows the group
 
 ## Stay connected, 2000 random ops, seed 1 (40% open a first window on a free tile within 5 of the group, 30% close the last window, 30% drag within 5 tiles; up to 30 workspaces), 73330 ms

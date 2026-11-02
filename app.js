@@ -222,13 +222,13 @@ function drawWorkspace(F, w, alpha) {
 
 // A move is a list of segments, each from a tile-relative offset to another.
 // A segment with `rigid` moves the workspace with its whole piece: every member
-// follows the same interpolated symmetry G (in the piece root's frame), so the
-// piece keeps its shape every frame; `turn` spins the workspace in place onto
-// its new tile's orientation.
+// follows the same partial slide G^e (in the piece root's frame), so the piece
+// keeps its shape every frame and never turns about a point; `turn` spins the workspace in place
+// onto its new tile's orientation.
 function segRel(seg, e) {
   if (!seg.rigid) return lerpFrame(seg.off, seg.rel, e)
   const {Fu, G, turn} = seg.rigid
-  return M.compose(M.compose(M.inv(Fu), lerpFrame(M.id(), G, e)), M.compose(Fu, M.rot(turn * e)))
+  return M.compose(M.compose(M.inv(Fu), M.slidePow(G, e)), M.compose(Fu, M.rot(turn * e)))
 }
 function animFrame(a, t) {
   let el = t - a.t0, seg = a.segs.at(-1), p = 1
