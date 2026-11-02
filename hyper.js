@@ -97,23 +97,81 @@ class Tiling {
       this.step.push(M.compose(M.compose(M.rot(th), M.to([Math.tanh(this.rE), 0])), M.rot(-th)))
     }
     this.rel = this.step.map((S) => [0, 1, 2, 3].map((j) => M.compose(S, M.rot((j * 2 * Math.PI) / p))))
-    this.tiles = [{id: 0, nbr: new Array(p).fill(-1), tw: new Array(p).fill(0), parent: -1, pk: 0}]
+    this.tiles = [{id: 0, nbr: new Array(p).fill(-1), tw: new Array(p).fill(0), parent: -1, pk: 0, P: M.id()}]
+    this.count = 1
+    this.nextTile = 1
+    this.origin = 0
+    // Tiles by where they sit (frame P, relative to the origin tile), so a
+    // tile reached around a gap in the links is still found, not duplicated.
+    this.byPos = new Map()
+    this.index(0)
     this.frameCache = new Map()
   }
-  // Frame of `id` relative to tile 0, along its creation path. Only meaningful
-  // near tile 0; kept for the earlier scripts and for radial frames.
+  // Frame of `id` relative to the origin tile (tile 0 until a prune re-roots).
   abs(id) {
-    let F = M.id()
-    for (let t = this.tiles[id]; t.parent !== -1; t = this.tiles[t.parent]) {
-      const pt = this.tiles[t.parent]
-      F = M.compose(this.rel[t.pk][pt.tw[t.pk]], F)
+    return this.tiles[id].P
+  }
+  posKey(x, y) {
+    return `${Math.floor(x / 1.3)},${Math.floor(y / 1.3)}`
+  }
+  index(id) {
+    const [x, y] = M.hyperXY(this.tiles[id].P), k = this.posKey(x, y)
+    const list = this.byPos.get(k)
+    if (list) list.push(id); else this.byPos.set(k, [id])
+  }
+  unindex(id) {
+    const [x, y] = M.hyperXY(this.tiles[id].P), k = this.posKey(x, y)
+    const list = this.byPos.get(k)
+    if (!list) return
+    const i = list.indexOf(id)
+    if (i >= 0) list.splice(i, 1)
+    if (!list.length) this.byPos.delete(k)
+  }
+  // Known tile at frame P, if P is near enough the origin to compare. Tile
+  // centers are at least 2 sinh(rE) = 2.6 apart in hyperboloid x/y, so the
+  // match within 1 is unique while rounding error stays far below that.
+  atPos(P) {
+    if (C.abs2(P.a) > 1e9) return null
+    const [x, y] = M.hyperXY(P)
+    const cx = Math.floor(x / 1.3), cy = Math.floor(y / 1.3)
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const list = this.byPos.get(`${cx + i},${cy + j}`)
+      if (!list) continue
+      for (const id of list) {
+        const [u, v] = M.hyperXY(this.tiles[id].P)
+        if ((u - x) ** 2 + (v - y) ** 2 < 1) return id
+      }
     }
-    return F
+    return null
   }
   link(t, k, n, j) {
     const back = (((k + 2 - j) % this.p) + this.p) % this.p
     this.tiles[t].nbr[k] = n; this.tiles[t].tw[k] = j
     this.tiles[n].nbr[back] = t; this.tiles[n].tw[back] = (this.p - j) % this.p
+  }
+  // Edge of n that faces t across t's edge k.
+  backEdge(t, k) {
+    return (((k + 2 - this.tiles[t].tw[k]) % this.p) + this.p) % this.p
+  }
+  // The tile across edge k of `id`, found by walking the q tiles around one end
+  // of that edge through existing links; with it, the edge of it facing `id`.
+  // Around the vertex between edges a and a+1 of u, crossing edge a+1 reaches
+  // a tile where the same vertex is between edges e and e+1, e the edge back
+  // (and mirrored for the other end). q - 1 steps reach the tile across edge k.
+  aroundVertex(id, k) {
+    const p = this.p
+    for (const dir of [1, -1]) {
+      let u = id, a = k, ok = true
+      for (let i = 0; i < this.q - 1; i++) {
+        const c = (((a + dir) % p) + p) % p, n = this.tiles[u].nbr[c]
+        if (n === -1) { ok = false; break }
+        a = this.backEdge(u, c); u = n
+      }
+      if (!ok) continue
+      const b = (((a + dir) % p) + p) % p
+      if (this.tiles[u].nbr[b] === -1) return {n: u, b}
+    }
+    return null
   }
   // Existing tiles near `id` by following links only, with frames relative to it.
   localFrames(id, maxDist) {
@@ -131,33 +189,45 @@ class Tiling {
     }
     return out
   }
+  // The old way to find a tile across a gap: search every linked tile within
+  // five tile widths. Only for far from the origin, where positions are too
+  // coarse to compare.
+  searchNear(id, k) {
+    const G = this.step[k]
+    for (const [c, F] of this.localFrames(id, 5 * this.rE * 2)) {
+      const D = M.compose(M.inv(G), F)
+      if (c !== id && M.dist0(D) < 0.01) return {n: c, j: ((Math.round(M.split(D).alpha / ((2 * Math.PI) / this.p)) % this.p) + this.p) % this.p}
+    }
+    return null
+  }
   neighbors(id) {
     const t = this.tiles[id]
     if (t.nbr.includes(-1)) {
-      const near = this.localFrames(id, 5 * this.rE * 2)
       for (let k = 0; k < this.p; k++) {
         if (t.nbr[k] !== -1) continue
-        const G = this.step[k]
+        const G = this.step[k], P = M.compose(t.P, G)
         let found = -1, j = 0
-        for (const [c, F] of near) {
-          const D = M.compose(M.inv(G), F)
-          if (c !== id && M.dist0(D) < 0.01) {
-            found = c
-            j = ((Math.round(M.split(D).alpha / ((2 * Math.PI) / this.p)) % this.p) + this.p) % this.p
-            break
-          }
+        const v = this.aroundVertex(id, k)
+        if (v) { found = v.n; j = (((k + 2 - v.b) % this.p) + this.p) % this.p }
+        else {
+          const at = C.abs2(P.a) <= 1e9 ? this.atPos(P) : null
+          const near = at !== null || C.abs2(P.a) <= 1e9 ? null : this.searchNear(id, k)
+          if (at !== null) {
+            const D = M.compose(M.inv(P), this.tiles[at].P)
+            found = at; j = ((Math.round(M.split(D).alpha / ((2 * Math.PI) / this.p)) % this.p) + this.p) % this.p
+          } else if (near) ({n: found, j} = near)
         }
         if (found === -1) {
-          found = this.tiles.length
-          this.tiles.push({id: found, nbr: new Array(this.p).fill(-1), tw: new Array(this.p).fill(0), parent: id, pk: k})
-          j = 0
+          found = this.nextTile++
+          this.count++
           if (this.radialFrames) {
-            const {alpha} = M.split(M.compose(this.abs(id), G))
+            const {alpha} = M.split(P)
             j = (((-Math.round(alpha / ((2 * Math.PI) / this.p))) % this.p) + this.p) % this.p
           }
+          this.tiles[found] = {id: found, nbr: new Array(this.p).fill(-1), tw: new Array(this.p).fill(0), parent: id, pk: k, P: M.compose(P, M.rot((j * 2 * Math.PI) / this.p))}
+          this.index(found)
         }
         this.link(id, k, found, j)
-        near.set(found, M.compose(G, M.rot((j * 2 * Math.PI) / this.p)))
       }
     }
     return t.nbr
