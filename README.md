@@ -1,4 +1,4 @@
-Browser prototype of the {4,5} hyperbolic workspace layout. No build step or server: run `xdg-open prototype/index.html` from the repo root.
+Browser prototype of the {4,5} hyperbolic workspace layout. No build step or server: run `xdg-open index.html` from the repo root.
 
 Live demo: https://deedlefake.github.io/gnome-shell-extension-hyperbolic-workspaces/
 
@@ -17,4 +17,4 @@ Stay connected: whenever closing a workspace's last window or moving a workspace
 The center follows the group. After any open, close or drop, if the center tile has no windows but some tile does, the center moves to the nearest tile with windows by edge steps; ties go to the oldest workspace. With no windows anywhere it stays put. Home, first-window placement and the split tie-break all use the current center.
 
 The side panel switches the arrow key behavior, orientation, pan snapping and the move key. The defaults are "Always visual direction" for the arrow keys and "Upright after move" for orientation.
-`node prototype/sim.js [ops] [seed]` runs random open/close/drag churn and checks that the group stays connected and that nothing moves except the insert chain, a newly opened far workspace, and cut-off pieces, each as the image of its own tiles under one orientation-preserving tiling symmetry, with a one-tile slide taken whenever one reconnects a two-piece split. `node prototype/far.js` checks that tiles stay exact far from the center. `node prototype/backtrack.js` prints the earlier backtracking numbers. `scenarios.js` measured the old removal policies and only runs at commit ce3f40f. `results.txt` has the output.
+`node sim.js [ops] [seed]` runs random open/close/drag churn and checks that the group stays connected and that nothing moves except the insert chain, a newly opened far workspace, and cut-off pieces, each as the image of its own tiles under one orientation-preserving tiling symmetry, with a one-tile slide taken whenever one reconnects a two-piece split. `node far.js` checks that tiles stay exact far from the center. `node backtrack.js` prints the earlier backtracking numbers. `scenarios.js` measured the old removal policies and only runs at commit ce3f40f. `results.txt` has the output.
