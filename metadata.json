@@ -1,0 +1,8 @@
+{
+  "uuid": "hyperbolic-workspaces@deedlefake.github.io",
+  "name": "Hyperbolic Workspaces",
+  "description": "Lays out workspaces on a {4,5} hyperbolic plane in the Overview.",
+  "shell-version": ["51"],
+  "url": "https://github.com/DeedleFake/gnome-shell-extension-hyperbolic-workspaces",
+  "settings-schema": "org.gnome.shell.extensions.hyperbolic-workspaces"
+}
