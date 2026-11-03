@@ -21,6 +21,12 @@ const NAV = {
 /** Keys that switch the workspace too when page-keys-activate is on. */
 const ACTIVATES = new Set(['pageUp', 'pageDown', 'home', 'end']);
 const RIM_HIT = 0.15;
+/** Pointer and touch events -> gesture input kind. A touch drives the plane like the primary button. */
+const KIND = new Map([
+    [Clutter.EventType.BUTTON_PRESS, 'press'], [Clutter.EventType.MOTION, 'motion'], [Clutter.EventType.BUTTON_RELEASE, 'release'],
+    [Clutter.EventType.TOUCH_BEGIN, 'press'], [Clutter.EventType.TOUCH_UPDATE, 'motion'],
+    [Clutter.EventType.TOUCH_END, 'release'], [Clutter.EventType.TOUCH_CANCEL, 'release'],
+]);
 
 /**
  * H3 -> Graphene.Matrix, row-vector order: [h00,h10,0,h20, h01,h11,0,h21, 0,0,1,0, h02,h12,0,h22]
@@ -60,6 +66,7 @@ class PlaneView extends St.Widget {
         this._disk = {cx: 0, cy: 0, r: 1};
         this._carry = null;
         this._grab = null;
+        this._seq = null;
         this._delegate = this;   // DND: empty tiles take window drops
 
         this._backdrop = new St.DrawingArea({x_expand: true, y_expand: true});
@@ -234,18 +241,21 @@ class PlaneView extends St.Widget {
     /** Captured pointer events -> disk.toDisk -> gesture.handle -> one ViewState/Plane/windowMoves call per Intent.
      * A plain press on a window preview stays GNOME's (click activates, drag moves the window). */
     vfunc_captured_event(event) {
-        const type = event.type();
-        const kind = type === Clutter.EventType.BUTTON_PRESS ? 'press'
-            : type === Clutter.EventType.MOTION ? 'motion'
-            : type === Clutter.EventType.BUTTON_RELEASE ? 'release' : null;
+        const kind = KIND.get(event.type());
         if (!kind) return Clutter.EVENT_PROPAGATE;
-        if (kind === 'press' && event.get_button() !== Clutter.BUTTON_PRIMARY) return Clutter.EVENT_PROPAGATE;
+        // One input owns a grab: the pointer, or the first finger down. Other fingers stay GNOME's.
+        // Sequences are new boxed wrappers per event, so compare their slots.
+        const seq = event.get_event_sequence()?.get_slot() ?? null;
+        if (kind === 'press' && this._grab) return Clutter.EVENT_PROPAGATE;
+        if (kind !== 'press' && this._grab && seq !== this._seq) return Clutter.EVENT_PROPAGATE;
+        if (kind === 'press' && seq === null && event.get_button() !== Clutter.BUTTON_PRIMARY) return Clutter.EVENT_PROPAGATE;
         const moveMod = (event.get_state() & this._cfg.settings.moveModifier) !== 0;
         if (kind === 'press' && previewOf(global.stage.get_event_actor(event), this) && !moveMod) return Clutter.EVENT_PROPAGATE;
         if (kind !== 'press' && !this._grab) return Clutter.EVENT_PROPAGATE;
         const at = this._locate(event);
         if (kind === 'press') {
             this._grab = global.stage.grab(this);
+            this._seq = seq;
             this._carry = at.key !== null && moveMod ? {key: at.key, tile: at.tile, plan: null, p: at.p} : null;
         }
         const intents = this._gesture.handle({type: kind, ...at, moveMod, timeMs: event.get_time()});
@@ -258,6 +268,7 @@ class PlaneView extends St.Widget {
     _endGrab() {
         this._grab?.dismiss();
         this._grab = null;
+        this._seq = null;
         this._carry = null;
     }
 
