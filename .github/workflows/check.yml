@@ -16,5 +16,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-bin
       - name: Syntax and schema check
         run: sh tools/check.sh
+      # After check.sh, so its git ls-files does not pick up the demo's files.
+      - name: Check out the demo for the geometry parity test
+        uses: actions/checkout@v4
+        with:
+          ref: prototype
+          path: demo
       - name: Node tests
+        env:
+          HYPER_JS: ${{ github.workspace }}/demo/hyper.js
         run: npm test
