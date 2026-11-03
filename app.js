@@ -6,9 +6,11 @@ const OPTIONS = {
   backMs: {300: "300 ms", 600: "600 ms", 1000: "1000 ms"},
   snap: {on: "On", off: "Off"},
   moveMod: {shift: "Shift", alt: "Alt", ctrl: "Ctrl", ctrlalt: "Ctrl+Alt"},
+  model: {klein: "Klein", fitted: "Fitted", poincare: "Poincaré"},
 }
 const opt = {orient: "after", back: "visual", backMs: "600", snap: "on", moveMod: "shift"}
 const params = new URLSearchParams(location.search)
+opt.model = OPTIONS.model[localStorage.getItem("hyperbolic.model")] ? localStorage.getItem("hyperbolic.model") : "poincare"
 for (const k of Object.keys(opt)) if (params.has(k)) opt[k] = params.get(k)
 const DUR = +(params.get("dur") ?? 300)
 // Held when a drag starts on a workspace, this moves the workspace instead of panning.
@@ -239,12 +241,46 @@ function resize() {
 window.addEventListener("resize", resize)
 
 const toScreen = (z) => [cx + R * z[0], cy - R * z[1]]
-const toDisk = (x, y) => [(x - cx) / R, -(y - cy) / R]
+// A canvas point as a Poincaré disk point. In Klein the canvas shows the
+// Klein disk, so the point is converted back; Fitted keeps Poincaré positions.
+function toDisk(x, y) {
+  const k = [(x - cx) / R, -(y - cy) / R]
+  if (opt.model !== "klein" || C.abs2(k) >= 1) return k
+  return C.scale(k, 1 / (1 + Math.sqrt(1 - C.abs2(k))))
+}
+const toKlein = (z) => C.scale(z, 2 / (1 + C.abs2(z)))
+
+// The plane drawn three ways, all from the same frames. Poincaré bends every
+// line. Klein is the projective model: a tile is an exact perspective image of
+// its flat square. Fitted puts the square's corners where Poincaré has them
+// and fills the straight quad between with the perspective map through them.
+// Klein and Fitted are what a 4x4 actor transform can draw.
+const SQ = [[-1, -1], [1, -1], [1, 1], [-1, 1]]
+const homCache = new WeakMap()
+function homography(F) {
+  let h = homCache.get(F)
+  if (h) return h
+  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = SQ.map(([u, v]) => toScreen(M.apply(F, T.local(u, v))))
+  const dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3, dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3
+  const den = dx1 * dy2 - dx2 * dy1
+  const g = (dx3 * dy2 - dx2 * dy3) / den, hh = (dx1 * dy3 - dx3 * dy1) / den
+  h = {a: x1 - x0 + g * x1, b: x3 - x0 + hh * x3, c: x0, d: y1 - y0 + g * y1, e: y3 - y0 + hh * y3, f: y0, g, h: hh}
+  homCache.set(F, h)
+  return h
+}
+// Screen point of local point z (as from T.local) in a tile with frame F.
+function project(F, z) {
+  if (opt.model === "poincare") return toScreen(M.apply(F, z))
+  if (opt.model === "klein") return toScreen(toKlein(M.apply(F, z)))
+  const k = toKlein(z), s = (k[0] / T.kleinHalf + 1) / 2, t = (k[1] / T.kleinHalf + 1) / 2
+  const H = homography(F), w = H.g * s + H.h * t + 1
+  return [(H.a * s + H.b * t + H.c) / w, (H.d * s + H.e * t + H.f) / w]
+}
 
 function path(F, pts) {
   ctx.beginPath()
   for (let i = 0; i < pts.length; i++) {
-    const [x, y] = toScreen(M.apply(F, pts[i]))
+    const [x, y] = project(F, pts[i])
     if (i === 0) ctx.moveTo(x, y)
     else ctx.lineTo(x, y)
   }
@@ -541,7 +577,7 @@ function tileRect(tile) {
   const F = screenFrame(tile)
   if (!F) return {x: W / 2 - 20, y: H / 2 - 12, w: 40, h: 24}
   const Fc = content(F, wsAtTile().get(tile)?.w)
-  const pts = screenPoly.map((pt) => toScreen(M.apply(Fc, pt)))
+  const pts = screenPoly.map((pt) => project(Fc, pt))
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1])
   const x = Math.min(...xs), y = Math.min(...ys)
   return {x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y}
@@ -847,19 +883,19 @@ function windowOutlines(tile) {
   const Fc = content(F, w), slots = overviewSlots(w)
   return w.windows.map((win, i) => {
     const {body, bar} = slotShape(slots.get(win.id))
-    return {i, n: w.windows.length, id: win.id, ws: w.id, shade: win.shade, pts: body.map((pt) => toScreen(M.apply(Fc, pt))), bar: bar.map((pt) => toScreen(M.apply(Fc, pt)))}
+    return {i, n: w.windows.length, id: win.id, ws: w.id, shade: win.shade, pts: body.map((pt) => project(Fc, pt)), bar: bar.map((pt) => project(Fc, pt))}
   })
 }
-function windowAt(tile, x, y) {
-  const inside = (pts) => {
-    let c = false
-    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-      const [xi, yi] = pts[i], [xj, yj] = pts[j]
-      if ((yi > y) !== (yj > y) && x < xi + (xj - xi) * (y - yi) / (yj - yi)) c = !c
-    }
-    return c
+function insidePoly(pts, x, y) {
+  let c = false
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j]
+    if ((yi > y) !== (yj > y) && x < xi + (xj - xi) * (y - yi) / (yj - yi)) c = !c
   }
-  return windowOutlines(tile).findLast((o) => inside(o.pts)) ?? null
+  return c
+}
+function windowAt(tile, x, y) {
+  return windowOutlines(tile).findLast((o) => insidePoly(o.pts, x, y)) ?? null
 }
 
 // Every way a workspace loses its last window ends here. The tile stays where
@@ -1086,9 +1122,12 @@ function dropWindow(d) {
   applyMoves(r.moves)
 }
 
+// Klein tiles are exactly the Poincaré tiles moved, so the disk test holds;
+// a Fitted tile is its straight corner quad.
 function hitTest(z) {
+  const [x, y] = toScreen(z)
   for (const [id, F] of visCache ?? visible()) {
-    if (T.insideLocal(M.apply(M.inv(F), z))) return id
+    if (opt.model === "fitted" ? insidePoly(SQ.map((c) => project(F, T.local(...c))), x, y) : T.insideLocal(M.apply(M.inv(F), z))) return id
   }
   return null
 }
@@ -1109,7 +1148,9 @@ window.addEventListener("keydown", (e) => {
   else if (e.key === "o") openWindow()
   else if (e.key === "c") closeWindow(false)
   else if (e.key === "x" || e.key === "Delete") closeWindow(true)
+  else if (e.key === "m") setModel(Object.keys(OPTIONS.model)[(Object.keys(OPTIONS.model).indexOf(opt.model) + 1) % 3])
 })
+function setModel(v) { opt.model = v; localStorage.setItem("hyperbolic.model", v); syncPanel(); kick() }
 
 for (const el of document.querySelectorAll("[data-opt]")) {
   const k = el.dataset.opt
@@ -1117,7 +1158,7 @@ for (const el of document.querySelectorAll("[data-opt]")) {
     const b = document.createElement("button")
     b.textContent = label
     b.dataset.v = v
-    b.onclick = () => { opt[k] = v; syncPanel(); kick() }
+    b.onclick = () => { if (k === "model") setModel(v); else { opt[k] = v; syncPanel(); kick() } }
     el.appendChild(b)
   }
 }
@@ -1133,7 +1174,7 @@ window.app = {
   set: (k, v) => { opt[k] = v; syncPanel(); kick() },
   goTo, goHome, T, M, view, build,
   get S() { return S }, get focus() { return focus },
-  screenOf: (tile) => { const F = screenFrame(tile); return F && toScreen(M.center(F)) },
+  screenOf: (tile) => { const F = screenFrame(tile); return F && project(F, [0, 0]) },
   setFocus: (id) => { focus = {ws: id} },
   idle: () => !viewAnim && anims.length === 0 && timers.size === 0 && (!rim || rim.alpha === rim.target),
   redraw: () => { draw() },
