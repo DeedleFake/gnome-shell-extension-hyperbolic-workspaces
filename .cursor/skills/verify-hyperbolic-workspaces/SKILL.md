@@ -60,7 +60,7 @@ A `state` other than 1 or a non-empty `error` means the extension failed to load
 
 Prefer user input (`key`, `click`, `drag`, AT-SPI actions) over `eval` that calls extension internals. Use `eval` to read state, not to cause it.
 
-`scripts/prove-prefs.sh` is the full preferences journey and the model for writing others. It asserts each step and logs it.
+`scripts/prove-prefs.sh` is the full preferences journey and the model for writing others. It asserts each step and logs it. `scripts/prove-monitors.sh` checks that a second monitor and the plane agree when `workspaces-only-on-primary` is false.
 
 ## Evidence
 

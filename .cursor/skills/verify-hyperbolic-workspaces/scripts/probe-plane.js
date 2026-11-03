@@ -4,7 +4,8 @@
     walk(global.stage);
     const plane = all.find(a => a.constructor.name.includes('Plane') && a._disk);
     if (!plane) return JSON.stringify({plane: null});
-    const titles = ws => ws.list_windows().map(w => w.title).sort().join(',') || '(empty)';
+    // The plane shows the primary monitor's windows only; other monitors show their own.
+    const titles = ws => ws.list_windows().filter(w => w.get_monitor() === plane._cfg.monitorIndex).map(w => w.title).sort().join(',') || '(empty)';
     const tiles = {};
     for (const id of plane._frame?.tiles?.keys() ?? []) {
         const ws = plane._cfg.plane.at(id);
