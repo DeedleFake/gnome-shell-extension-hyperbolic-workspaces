@@ -53,13 +53,18 @@ export class Plane {
         const keyOf = this._keyMap();
         const log = [];
         let s = this._state;
+        // A seated empty workspace reserved onto a free tile moves there (entering a blank tile from it).
+        const moving = new Set(this._seated.filter(k => {
+            const hint = this._hints.get(k);
+            return hint !== undefined && !snap.hasWindows(k) && this._T.tiles[hint] && !s.ws.some(w => w.tile === hint);
+        }));
         for (const k of this._seated) {
-            if (live.has(k)) continue;
+            if (live.has(k) && !moving.has(k)) continue;
             const idx = s.ws.findIndex(w => w.id === this._idOf.get(k));
             s = this._apply(G.removeWorkspace(this._T, s, idx), log);
         }
         for (const k of snap.order) {
-            if (!live.has(k) || this._seats.has(k)) continue;
+            if (!live.has(k) || (this._seats.has(k) && !moving.has(k))) continue;
             const hint = this._hints.get(k);
             this._hints.delete(k);
             const free = hint !== undefined && this._T.tiles[hint] && !s.ws.some(w => w.tile === hint);
@@ -96,7 +101,7 @@ export class Plane {
         return {change, commit};
     }
 
-    /** The next sync that seats `key` puts it on `tile` (a window dropped on an empty tile). @param {K} key @param {TileId} tile */
+    /** The next sync puts `key` on `tile`: a window dropped on an empty tile, or an empty seated workspace moving there. @param {K} key @param {TileId} tile */
     reserve(key, tile) { this._hints.set(key, tile); }
 
     /** @param {K} key @returns {Seat|undefined} undefined <=> no tile (the spare, or emptied and not active) */

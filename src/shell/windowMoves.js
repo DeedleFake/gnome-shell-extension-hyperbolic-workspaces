@@ -6,12 +6,14 @@
  *   Move the window to the workspace on `tile`, or to a fresh workspace that the next sync seats there.
  *   False when the window is already on that workspace.
  * @property {(tile: import('../core/types.js').TileId) => object} openOn
- *   A fresh workspace that the next sync seats on `tile` (entering an empty tile activates it).
+ *   A windowless workspace that the next sync seats on `tile` (entering an empty tile activates it).
+ *   An empty active workspace moves there itself, so GNOME never keeps a second empty one.
  */
 
 /**
  * @param {{plane: object, workspaceManager: object, monitorIndex: () => number,
- *          moveWindow: (w: object, monitor: number, index: number, append: boolean) => void}} deps
+ *          moveWindow: (w: object, monitor: number, index: number, append: boolean) => void,
+ *          resync: () => void}} deps
  * @returns {WindowMoves}
  */
 export function createWindowMoves(deps) {
@@ -37,6 +39,12 @@ export function createWindowMoves(deps) {
             return true;
         },
         openOn(tile) {
+            const active = wm.get_active_workspace();
+            if (active.n_windows === 0) {
+                plane.reserve(active, tile);
+                deps.resync();
+                return active;
+            }
             const f = fresh();
             const ws = f.ws ?? wm.append_new_workspace(false, global.get_current_time());
             plane.reserve(ws, tile);
