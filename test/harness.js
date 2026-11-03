@@ -39,14 +39,43 @@ export const assert = isNode ? (await import('node:assert/strict')).default : gj
 /** Loads the prototype's CommonJS hyper.js. */
 export async function loadDemo(path) {
     if (isNode) return (await import('node:module')).createRequire(import.meta.url)(path);
-    const GLib = (await import('gi://GLib')).default;
     const [, bytes] = GLib.file_get_contents(path);
     const module = {exports: {}};
     new Function('module', new TextDecoder().decode(bytes))(module);
     return module.exports;
 }
 
-export const env = name => isNode ? globalThis.process.env[name] : imports.gi.GLib.getenv(name);
+const GLib = isNode ? null : (await import('gi://GLib')).default;
+const Gio = isNode ? null : (await import('gi://Gio')).default;
+const root = isNode ? new URL('../', import.meta.url) : Gio.File.new_for_uri(import.meta.url).get_parent().get_parent();
+
+export const env = name => isNode ? globalThis.process.env[name] : GLib.getenv(name) ?? undefined;
+
+/** Text of a repo-relative file. */
+export async function readText(rel) {
+    if (isNode) return (await import('node:fs/promises')).readFile(new URL(rel, root), 'utf8');
+    return new TextDecoder().decode(root.resolve_relative_path(rel).load_contents(null)[1]);
+}
+
+/** Repo-relative paths of every .js file under src/. */
+export async function listSources() {
+    if (isNode) {
+        const fs = await import('node:fs/promises');
+        const out = await fs.readdir(new URL('src/', root), {recursive: true});
+        return out.filter(f => f.endsWith('.js')).map(f => `src/${f}`).sort();
+    }
+    const out = [];
+    const walk = (dir, rel) => {
+        const en = dir.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
+        for (let i; (i = en.next_file(null));) {
+            const n = i.get_name();
+            if (i.get_file_type() === Gio.FileType.DIRECTORY) walk(dir.get_child(n), `${rel}${n}/`);
+            else if (n.endsWith('.js')) out.push(`${rel}${n}`);
+        }
+    };
+    walk(root.get_child('src'), 'src/');
+    return out.sort();
+}
 
 export async function run() {
     let pass = 0, failed = 0, todo = 0;
