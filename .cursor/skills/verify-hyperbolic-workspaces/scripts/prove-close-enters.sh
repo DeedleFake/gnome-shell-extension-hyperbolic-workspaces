@@ -22,7 +22,7 @@ for close in Escape Super_L hide; do
 done
 
 # A tile with no workspace is entered too: closing on it opens a workspace there, as clicking it does.
-# Each case starts on Alpha's workspace: leaving an empty workspace for an empty tile is a separate bug, clicks included.
+# Each case starts on Alpha's workspace; prove-empty-hop.sh covers leaving an empty workspace.
 for close in Escape Super_L hide; do
     "$hw" eval "global.get_window_actors().map(a => a.meta_window).find(w => w.title === 'Alpha').get_workspace().activate(global.get_current_time())" >/dev/null; sleep 1
     "$hw" overview show >/dev/null; sleep 1.5

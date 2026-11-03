@@ -64,7 +64,9 @@ export class Plane {
             this._hints.delete(k);
             const free = hint !== undefined && this._T.tiles[hint] && !s.ws.some(w => w.tile === hint);
             const tile = free ? hint : G.nearestFree(this._T, s, this._fillOrder);
-            const r = G.openWorkspace(this._T, s, tile, screenDown(tile));
+            let r = G.openWorkspace(this._T, s, tile, screenDown(tile));
+            // The user entered this tile, so it stays put and the group slides over to touch it instead.
+            if (free && k === snap.active) r = this._pin(s, r, hint);
             this._idOf.set(k, r.added.id);
             keyOf.set(r.added.id, k);
             s = this._apply(r, log);
@@ -116,6 +118,24 @@ export class Plane {
     addPinSource(source) {
         this._pinSources.add(source);
         return () => this._pinSources.delete(source);
+    }
+
+    /**
+     * `r` with the whole group carried by the tiling symmetry that puts its added workspace back on `tile`,
+     * with its down edge. The group's shape is unchanged, so it stays connected.
+     * @param {Placement['state']} before @param {Placement & {added: {id: number, down: Edge}}} r @param {TileId} tile
+     */
+    _pin(before, r, tile) {
+        const landed = r.state.ws.find(w => w.id === r.added.id);
+        if (landed.tile === tile && landed.down === r.added.down) return r;
+        const turns = new Map();
+        const img = G.mapShape(this._T, r.state.ws.map(w => w.tile), landed.tile, tile, (r.added.down - landed.down + 4) % 4, turns);
+        const ws = r.state.ws.map(w => ({...w, tile: img.get(w.tile), down: (w.down + turns.get(w.tile)) % 4}));
+        const old = new Map(before.ws.map(w => [w.id, w]));
+        const moves = ws.filter(w => old.get(w.id)?.tile !== w.tile || old.get(w.id).down !== w.down)
+            .map(w => ({id: w.id, from: old.get(w.id)?.tile, to: w.tile, down: [old.get(w.id)?.down, w.down]}));
+        const anchor = G.followCenter(this._T, ws, img.get(r.state.anchor) ?? r.state.anchor);
+        return {...r, state: {...r.state, ws, anchor}, moves};
     }
 
     /** @param {Placement} r @param {Placement['moves'][]} log */
