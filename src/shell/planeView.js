@@ -136,10 +136,10 @@ class PlaneView extends St.Widget {
         this._backdrop.queue_repaint();
     }
 
+    // Every pass, not only on change: GNOME adds previews to a Workspace after it was turned off.
     _setReactive(ws, on) {
-        if (ws.reactive === on) return;
         ws.reactive = on;
-        for (const p of ws._windows) p.reactive = on;
+        for (const p of ws._windows) if (p.reactive !== on) p.reactive = on;
     }
 
     _syncState(only) {
