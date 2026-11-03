@@ -4,7 +4,7 @@
 // Patched (all exist in 51.1; re-check this list on every GNOME bump):
 //   WorkspacesDisplay._updateWorkspacesViews   after orig: replace the PRIMARY view with PlaneView (probe A)
 //   WorkspacesDisplay._updateSwipeTracker      after orig: swipe tracker disabled (it assumes a line)
-//   ThumbnailsBox._updateShouldShow            after orig: never shown (the minimap is a line too)
+//   ThumbnailsBox._updateShouldShow            after orig: the primary's is never shown (the minimap is a line too)
 // Not patched: WorkspacesView (never built on the primary monitor), Workspace, WindowPreview, search, Enter,
 // Escape. PgUp/PgDn/Home/End never reach WorkspacesDisplay's binding pool: PlaneView stops them in the display's
 // captured-event, which runs before the bindings.
@@ -68,7 +68,7 @@ export class OverviewHook {
         });
         this._inj.overrideMethod(WorkspaceThumbnail.ThumbnailsBox.prototype, '_updateShouldShow', orig => function () {
             orig.call(this);
-            if (!this._shouldShow) return;
+            if (!this._shouldShow || this._monitorIndex !== Main.layoutManager.primaryIndex) return;
             this._shouldShow = false;
             this.notify('should-show');
         });
