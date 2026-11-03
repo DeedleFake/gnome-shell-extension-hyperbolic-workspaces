@@ -1,10 +1,10 @@
-// SEAM for putting a window or the user on an empty tile. Occupied tiles keep GNOME's Workspace.acceptDrop
-// (it works through transforms: picks are transform-aware).
+// SEAM for putting a window on a tile, or the user on an empty one.
 
 /**
  * @typedef {object} WindowMoves
- * @property {(metaWindow: object, tile: import('../core/types.js').TileId) => boolean} dropOnEmpty
- *   Move the window to a fresh workspace that the next sync seats on `tile`.
+ * @property {(metaWindow: object, tile: import('../core/types.js').TileId) => boolean} dropOn
+ *   Move the window to the workspace on `tile`, or to a fresh workspace that the next sync seats there.
+ *   False when the window is already on that workspace.
  * @property {(tile: import('../core/types.js').TileId) => object} openOn
  *   A fresh workspace that the next sync seats on `tile` (entering an empty tile activates it).
  */
@@ -23,8 +23,13 @@ export function createWindowMoves(deps) {
         return {ws: null, append: true};
     };
     return {
-        dropOnEmpty(metaWindow, tile) {
-            if (plane.at(tile) !== undefined) return false;
+        dropOn(metaWindow, tile) {
+            const target = plane.at(tile);
+            if (target === metaWindow.get_workspace()) return false;
+            if (target !== undefined) {
+                deps.moveWindow(metaWindow, deps.monitorIndex(), target.index(), false);
+                return true;
+            }
             const f = fresh();
             const index = f.append ? wm.n_workspaces : f.ws.index();
             deps.moveWindow(metaWindow, deps.monitorIndex(), index, f.append);
