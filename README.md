@@ -16,6 +16,6 @@ Open the extension's preferences to change them.
 
 - **Focused tile size** (`focused-tile-size`, 1 to 2.5, default 1) grows the focused tile and shrinks the rest. The plane is drawn with straight edges. At 1 each tile's corners sit where the Poincaré disk puts them. At 2 the drawing is exactly the Klein model. From 1.8 up, the neighbor tiles are too small to read, so only the focused workspace's windows can be clicked. The reset button returns it to 1. A change applies the next time the Overview opens.
 - **Move modifier** (`move-modifier`, default Super) turns a drag into a workspace move.
-- **PgUp/PgDn activate** (`page-keys-activate`, default off) makes PgUp/PgDn switch workspaces like GNOME instead of only moving the focus.
+- **PgUp/PgDn activate** (`page-keys-activate`, default off) makes PgUp, PgDn and End switch workspaces like GNOME instead of only moving the focus.
 
 Curved Poincaré edges are not offered yet. They need a shader, and a shader moves pixels without moving where Clutter detects clicks.

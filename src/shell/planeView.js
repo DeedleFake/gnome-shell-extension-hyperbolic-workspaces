@@ -16,7 +16,10 @@ import {CLICK_CUTOFF} from '../disk/index.js';
 const NAV = {
     [Clutter.KEY_Left]: 'left', [Clutter.KEY_Right]: 'right', [Clutter.KEY_Up]: 'up', [Clutter.KEY_Down]: 'down',
     [Clutter.KEY_Page_Up]: 'pageUp', [Clutter.KEY_Page_Down]: 'pageDown', [Clutter.KEY_Home]: 'home',
+    [Clutter.KEY_End]: 'end',
 };
+/** Keys that switch the workspace too when page-keys-activate is on. */
+const ACTIVATES = new Set(['pageUp', 'pageDown', 'end']);
 const RIM_HIT = 0.15;
 
 /**
@@ -189,7 +192,7 @@ class PlaneView extends St.Widget {
         return f.kind === 'ws' ? this._cfg.plane.seatOf(f.key)?.tile : f.tile;
     }
 
-    /** Arrows/PgUp/PgDn/Home -> view.nav; everything else propagates (type-to-search, Enter, Escape stay GNOME's). */
+    /** Arrows/PgUp/PgDn/Home/End -> view.nav; everything else propagates (type-to-search, Enter, Escape stay GNOME's). */
     vfunc_key_press_event(event) { return this.handleKey(event); }
 
     /** Also called by OverviewHook from WorkspacesDisplay's captured-event: GNOME gives the display key focus. */
@@ -200,7 +203,7 @@ class PlaneView extends St.Widget {
             return Clutter.EVENT_PROPAGATE;
         this._cfg.view.nav(nav);
         const f = this._cfg.view.focus;
-        if ((nav === 'pageUp' || nav === 'pageDown') && this._cfg.settings.pageKeysActivate && f.kind === 'ws')
+        if (ACTIVATES.has(nav) && this._cfg.settings.pageKeysActivate && f.kind === 'ws')
             f.key.activate(global.get_current_time());
         this.kick();
         return Clutter.EVENT_STOP;

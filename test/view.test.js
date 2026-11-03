@@ -121,6 +121,18 @@ test('PgUp/PgDn walk seated workspaces in GNOME order; Home returns to the cente
     assert.ok(C.abs2(M.center(F)) < 1e-12 && Math.abs(wrapAngle(M.split(F).alpha)) < 1e-9, 'center workspace is centered and upright');
 });
 
+test('End focuses the last seated workspace in GNOME order', () => {
+    const {plane, view, wm} = setup(4);
+    view.nav('end');
+    assert.deepEqual(view.focus, {kind: 'ws', key: plane.seated().at(-1)});
+    wm.reorder(plane.seated().at(-1), 0);
+    drive(plane, view, wm);
+    view.nav('end');
+    assert.deepEqual(view.focus, {kind: 'ws', key: plane.seated().at(-1)}, 'End follows GNOME order after a reorder');
+    view.nav('pageDown');
+    assert.deepEqual(view.focus, {kind: 'ws', key: plane.seated().at(-1)}, 'PgDn past the last stays on it');
+});
+
 test('pan moves the drawn plane and keeps the focus', () => {
     const {plane, view} = setup(2);
     const t = settle(view), before = view.focus;
