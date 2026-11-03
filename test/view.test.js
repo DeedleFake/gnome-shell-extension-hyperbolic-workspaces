@@ -1,8 +1,8 @@
 // ViewState through its public surface, fed by Plane.sync on FakeWm snapshots.
 import {test, assert} from './harness.js';
-import {Plane} from '../src/core/plane.js';
-import {ViewState} from '../src/core/view.js';
-import {M, C, wrapAngle} from '../src/core/geometry.js';
+import {Plane} from '../core/plane.js';
+import {ViewState} from '../core/view.js';
+import {M, C, wrapAngle} from '../core/geometry.js';
 import {FakeWm, drive, fill} from './fakeWm.js';
 
 const setup = n => {

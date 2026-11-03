@@ -57,14 +57,21 @@ export async function readText(rel) {
     return new TextDecoder().decode(root.resolve_relative_path(rel).load_contents(null)[1]);
 }
 
-/** Repo-relative paths of every .js file under src/. */
+/** The extension's own modules: the files GNOME Shell loads from the repository root. */
+export const EXTENSION_ENTRIES = ['extension.js', 'prefs.js', 'core/', 'disk/', 'shell/'];
+
+/** Repo-relative paths of every extension .js file. */
 export async function listSources() {
+    const out = [];
     if (isNode) {
         const fs = await import('node:fs/promises');
-        const out = await fs.readdir(new URL('src/', root), {recursive: true});
-        return out.filter(f => f.endsWith('.js')).map(f => `src/${f}`).sort();
+        for (const e of EXTENSION_ENTRIES) {
+            if (!e.endsWith('/')) { out.push(e); continue; }
+            for (const f of await fs.readdir(new URL(e, root), {recursive: true}))
+                if (f.endsWith('.js')) out.push(`${e}${f}`);
+        }
+        return out.sort();
     }
-    const out = [];
     const walk = (dir, rel) => {
         const en = dir.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
         for (let i; (i = en.next_file(null));) {
@@ -73,7 +80,9 @@ export async function listSources() {
             else if (n.endsWith('.js')) out.push(`${rel}${n}`);
         }
     };
-    walk(root.get_child('src'), 'src/');
+    for (const e of EXTENSION_ENTRIES)
+        if (e.endsWith('/')) walk(root.get_child(e.slice(0, -1)), e);
+        else out.push(e);
     return out.sort();
 }
 

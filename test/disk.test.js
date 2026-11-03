@@ -1,11 +1,11 @@
 // The straight-edged DiskModel and its focused tile size remap. At size 2 it is the Klein model.
 import {test, assert} from './harness.js';
-import {straightModel, remap, SIZE, CLICK_CUTOFF} from '../src/disk/fitted.js';
-import {Plane} from '../src/core/plane.js';
-import {ViewState} from '../src/core/view.js';
+import {straightModel, remap, SIZE, CLICK_CUTOFF} from '../disk/fitted.js';
+import {Plane} from '../core/plane.js';
+import {ViewState} from '../core/view.js';
 import {FakeWm, drive, fill} from './fakeWm.js';
-import {applyH} from '../src/disk/solve.js';
-import {M, Tiling} from '../src/core/geometry.js';
+import {applyH} from '../disk/solve.js';
+import {M, Tiling} from '../core/geometry.js';
 
 const d = {cx: 640, cy: 400, r: 380};
 const dk = {...d, size: 2};

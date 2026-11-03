@@ -1,6 +1,6 @@
 // GestureMachine: scripted pointer sequences in, Intent lists out.
 import {test, assert} from './harness.js';
-import {GestureMachine} from '../src/core/gesture.js';
+import {GestureMachine} from '../core/gesture.js';
 
 const ev = (type, x, o = {}) => ({type, p: [x / 100, 0], xy: [x, 0], tile: null, key: null, moveMod: false, onRim: false, timeMs: 0, ...o});
 const run = (events, g = new GestureMachine()) => events.flatMap(e => g.handle(e));

@@ -21,7 +21,7 @@ $S/hw up          # builds image hyperbolic-gs51:verify once (a few minutes), th
 $S/hw scene       # windows Alpha..Delta, each alone on workspaces 1..4; workspace 0 is empty and active
 ```
 
-`up` copies `src/`, `metadata.json` and `schemas/` from this checkout, enables only this extension, and starts `gnome-shell --headless --unsafe-mode --virtual-monitor 1280x800`. Set `HW_MONITORS` before `up` for other monitors, for example `HW_MONITORS='1280x800 1024x768'` for a second one on the right. It returns once the shell has finished starting and the extension state is `1` (ENABLED). After editing code, run `$S/hw install` to copy the tree again and restart the shell.
+`up` copies every tracked and unignored file in this checkout into the extension directory, as a clone would, enables only this extension, and starts `gnome-shell --headless --unsafe-mode --virtual-monitor 1280x800`. Set `HW_MONITORS` before `up` for other monitors, for example `HW_MONITORS='1280x800 1024x768'` for a second one on the right. It returns once the shell has finished starting and the extension state is `1` (ENABLED). After editing code, run `$S/hw install` to copy the tree again and restart the shell.
 
 ## Doctor
 

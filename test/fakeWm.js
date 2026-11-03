@@ -6,7 +6,7 @@ export class FakeWm {
         this.active = this.list[0];
     }
     _new() { return {w: 0, name: `ws${(this._n = (this._n ?? 0) + 1)}`}; }
-    /** @returns {import('../src/core/types.js').Snapshot<object>} */
+    /** @returns {import('../core/types.js').Snapshot<object>} */
     snapshot() { return {order: [...this.list], hasWindows: k => k.w > 0, active: this.active}; }
     openWindow(k) {
         k.w++;

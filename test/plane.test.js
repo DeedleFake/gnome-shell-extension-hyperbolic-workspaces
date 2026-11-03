@@ -1,9 +1,9 @@
 // Plane and ViewState driven through the same path the shell uses (Plane.sync on a Snapshot,
 // ViewState.absorb on the Change), with FakeWm in place of Mutter.
 import {test, assert} from './harness.js';
-import {Plane} from '../src/core/plane.js';
-import {ViewState} from '../src/core/view.js';
-import {M, C, wrapAngle} from '../src/core/geometry.js';
+import {Plane} from '../core/plane.js';
+import {ViewState} from '../core/view.js';
+import {M, C, wrapAngle} from '../core/geometry.js';
 import {FakeWm, drive, fill} from './fakeWm.js';
 
 const setup = () => {
