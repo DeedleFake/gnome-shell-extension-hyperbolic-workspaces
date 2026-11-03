@@ -9,7 +9,7 @@ Clicking a tile that is not focused focuses it. Clicking the focused tile enters
 - `enter-window-click` activates a window from its preview and switches to its workspace.
 - `enter-on-close` enters the focused workspace on every close; `scripts/prove-close-enters.sh` checks Escape, Super and a plain hide, on a workspace and on a tile with no workspace, and a window activation.
 - `enter-empty-tile` turns a click on an empty interactable tile into a new workspace.
-- `enter-lone-tile` lands on a blank tile that touches only the empty workspace being left. The group slides over to touch it, keeping its shape. `scripts/prove-empty-hop.sh` checks a click and Escape, and `hw lone-tile-point` finds such a tile.
+- `enter-lone-tile` lands on a blank tile that touches only the empty workspace being left. The empty workspace moves onto that tile instead of GNOME keeping a second empty one, and the group slides over to touch it, keeping its shape. `scripts/prove-empty-hop.sh` checks a click and Escape, that GNOME lists one empty workspace, and that Super+PgUp then goes to Delta, and `hw lone-tile-point` finds such a tile.
 
 ## How to get to it (user POV)
 
@@ -31,4 +31,5 @@ Preconditions:
 - `Return` does nothing in the Overview outside search, as in stock GNOME 51, which binds no Return action there.
 - Focusing a tile slides it to the middle of the disk, so a second click must go where it is drawn now. `hw empty-tile-point` returns the focused tile when it is empty.
 - Compare workspaces by title, not index: dynamic workspaces remove the empty workspace you leave, so indices shift.
+- Entering a blank tile from an empty workspace moves that workspace, so the active index does not change. Start from a workspace with windows to see a new one open.
 - Picking right after the Overview opens can miss actors that have not painted yet. Wait about a second after `overview show`.

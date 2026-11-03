@@ -1,6 +1,7 @@
 #!/bin/sh
 # Leaving an empty workspace for a blank tile lands on that tile, by click and by closing the Overview.
 # The blank tile touches only the workspace being left, so the plane loses that link as GNOME removes it.
+# GNOME then holds one empty workspace, so Super+PgUp goes to Delta.
 # Run after `hw up` and `hw scene`. Exits non-zero on the first failed check.
 set -eu
 hw="$(dirname "$0")/hw"
@@ -33,5 +34,11 @@ for how in click Escape; do
     for w in Alpha Beta Gamma Delta; do echo "$p" | grep -q "\"$w\"" || fail "$how: $w lost its tile"; done
     # Two from the probe's focus and active fields, plus one tile: the left workspace is a blank tile again.
     [ "$empties" -eq 3 ] || fail "$how: expected one empty tile on the plane, probe shows $((empties - 2))"
+    list=$("$hw" workspaces | sed "s/^(true, '\"//; s/\"')$//"); echo "$how: GNOME $list"
+    [ "$(echo "$list" | grep -o ': *\(|\|$\)' | wc -l)" -eq 1 ] || fail "$how: GNOME keeps more than one empty workspace: $list"
+    "$hw" key Page_Up Super_L >/dev/null; sleep 1
+    "$hw" overview show >/dev/null; sleep 1.5
+    a=$(probe | field active); "$hw" overview hide >/dev/null; sleep 1
+    [ "$a" = Delta ] || fail "$how: Super+PgUp went to $a, not Delta"
 done
 echo PASS
