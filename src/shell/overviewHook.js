@@ -20,6 +20,13 @@ import {PlaneView} from './planeView.js';
 /** GNOME's mover, for createWindowMoves (planeView.js and windowMoves.js import no ui module). */
 export const moveWindow = (...args) => Main.moveWindowToMonitorAndWorkspace(...args);
 
+/** Calls `cb(mode)` now and on every session mode change. @param {(mode: string) => void} cb @returns {() => void} */
+export function watchSessionMode(cb) {
+    const id = Main.sessionMode.connect('updated', () => cb(Main.sessionMode.currentMode));
+    cb(Main.sessionMode.currentMode);
+    return () => Main.sessionMode.disconnect(id);
+}
+
 export class OverviewHook {
     /** @param {{plane, view, disk, settings, windowMoves}} config */
     constructor(config) { this._cfg = config; this._inj = null; this._view = null; this._display = null; }

@@ -235,7 +235,7 @@ class PlaneView extends St.Widget {
         if (!kind) return Clutter.EVENT_PROPAGATE;
         if (kind === 'press' && event.get_button() !== Clutter.BUTTON_PRIMARY) return Clutter.EVENT_PROPAGATE;
         const moveMod = (event.get_state() & this._cfg.settings.moveModifier) !== 0;
-        if (kind === 'press' && previewOf(event.get_source(), this) && !moveMod) return Clutter.EVENT_PROPAGATE;
+        if (kind === 'press' && previewOf(global.stage.get_event_actor(event), this) && !moveMod) return Clutter.EVENT_PROPAGATE;
         if (kind !== 'press' && !this._grab) return Clutter.EVENT_PROPAGATE;
         const at = this._locate(event);
         if (kind === 'press') {
@@ -290,7 +290,8 @@ class PlaneView extends St.Widget {
         this._cfg.hideOverview();
     }
 
-    // DND target for window previews over empty tiles (occupied tiles are GNOME Workspace targets).
+    // DND target for window previews over any reachable tile. Neighbor Workspace actors stop being drop
+    // targets once the focused tile size makes them unreactive, so the plane owns every drop.
     handleDragOver(source, _actor, x, y) {
         const tile = this._dropTile(source, x, y);
         const r = this._cfg.dragResult;
@@ -300,7 +301,7 @@ class PlaneView extends St.Widget {
     acceptDrop(source, _actor, x, y) {
         const tile = this._dropTile(source, x, y);
         if (tile === null) return false;
-        const ok = this._cfg.windowMoves.dropOnEmpty(source.metaWindow, tile);
+        const ok = this._cfg.windowMoves.dropOn(source.metaWindow, tile);
         this.kick();
         return ok;
     }
@@ -309,7 +310,8 @@ class PlaneView extends St.Widget {
         if (!source.metaWindow) return null;
         const [, lx, ly] = this.transform_stage_point(x, y);
         const tile = this._tileAt(lx, ly);
-        if (tile === null || tile === undefined || !this._reach.has(tile) || this._cfg.plane.at(tile) !== undefined) return null;
+        if (tile === null || tile === undefined || !this._reach.has(tile)) return null;
+        if (this._cfg.plane.at(tile) === source.metaWindow.get_workspace()) return null;
         return tile;
     }
 
