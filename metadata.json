@@ -3,6 +3,7 @@
   "name": "Hyperbolic Workspaces",
   "description": "Lays out workspaces on a {4,5} hyperbolic plane in the Overview.",
   "shell-version": ["51"],
+  "session-modes": ["user", "unlock-dialog"],
   "url": "https://github.com/DeedleFake/gnome-shell-extension-hyperbolic-workspaces",
   "settings-schema": "org.gnome.shell.extensions.hyperbolic-workspaces"
 }
