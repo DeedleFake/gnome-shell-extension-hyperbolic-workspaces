@@ -1,13 +1,13 @@
 # Entering a workspace
 
-Clicking a tile that is not focused focuses it. Clicking the focused tile enters it, which activates that workspace and closes the Overview. Closing the Overview any other way (Escape, Super, a swipe) also enters the focused workspace, unless a window or search result was activated, which wins as in GNOME. Clicking a window preview activates that window, as in GNOME. Clicking an empty tile next to the group opens a new workspace there.
+Clicking a tile that is not focused focuses it. Clicking the focused tile enters it, which activates that workspace and closes the Overview. Closing the Overview any other way (Escape, Super, a swipe) also enters the focused tile, opening a workspace there if it has none, as a click does, unless a window or search result was activated, which wins as in GNOME. Clicking a window preview activates that window, as in GNOME. Clicking an empty tile next to the group opens a new workspace there.
 
 ## Sub-features
 
 - `enter-focus-click` focuses an unfocused tile with one click.
 - `enter-focused-click` enters the focused tile with a click and closes the Overview.
 - `enter-window-click` activates a window from its preview and switches to its workspace.
-- `enter-on-close` enters the focused workspace on every close; `scripts/prove-close-enters.sh` checks Escape, Super, a plain hide and a window activation.
+- `enter-on-close` enters the focused workspace on every close; `scripts/prove-close-enters.sh` checks Escape, Super and a plain hide, on a workspace and on a tile with no workspace, and a window activation.
 - `enter-empty-tile` turns a click on an empty interactable tile into a new workspace.
 
 ## How to get to it (user POV)

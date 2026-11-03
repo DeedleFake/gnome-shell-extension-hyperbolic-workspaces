@@ -290,11 +290,12 @@ class PlaneView extends St.Widget {
     }
 
     _enter(tile) {
-        const k = this._cfg.plane.at(tile);
-        const ws = k ?? this._cfg.windowMoves.openOn(tile);
-        this._activate(ws);
+        this._activate(this._workspaceOn(tile));
         this._cfg.hideOverview();
     }
+
+    /** The workspace on `tile`, opening one there if it has none. */
+    _workspaceOn(tile) { return this._cfg.plane.at(tile) ?? this._cfg.windowMoves.openOn(tile); }
 
     // DND target for window previews over any reachable tile. Neighbor Workspace actors stop being drop
     // targets once the focused tile size makes them unreactive, so the plane owns every drop.
@@ -336,8 +337,10 @@ class PlaneView extends St.Widget {
     /** GNOME calls this on every close (Escape, Super, a hide, a swipe): enter the focused workspace. */
     prepareToLeaveOverview() {
         const f = this._cfg.view.focus;
-        if (f.kind === 'ws' && global.workspace_manager.get_active_workspace() === this._activated && f.key !== this._activated)
-            this._activate(f.key);
+        if (global.workspace_manager.get_active_workspace() === this._activated) {
+            const ws = f.kind === 'ws' ? f.key : this._workspaceOn(f.tile);
+            if (ws !== this._activated) this._activate(ws);
+        }
         for (const ws of this._actors.values()) ws.prepareToLeaveOverview(); }
     /** @param {number[]} stackIndices */
     syncStacking(stackIndices) { for (const ws of this._actors.values()) ws.syncStacking(stackIndices); }
