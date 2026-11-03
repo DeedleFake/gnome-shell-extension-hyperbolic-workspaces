@@ -206,3 +206,9 @@ test('panEnd snaps the tile nearest the center to the center, upright', () => {
     assert.ok(Math.abs(q - Math.round(q)) < 1e-6, 'it is square to the screen');
     void plane;
 });
+
+test('tileAt finds the drawn tile under a disk point', () => {
+    const {view} = setup(3);
+    const fs = view.frameOf(settle(view));
+    for (const [id, F] of fs.tiles) if (C.abs2(M.center(F)) < 0.8) assert.equal(view.tileAt(M.center(F)), id);
+});

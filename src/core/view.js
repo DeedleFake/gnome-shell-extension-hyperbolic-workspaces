@@ -179,6 +179,16 @@ export class ViewState {
         return out;
     }
 
+    /**
+     * The drawn tile under disk point p, or null (outside every drawn tile). The shell's hit test.
+     * @param {[number, number]} p @returns {TileId|null}
+     */
+    tileAt(p) {
+        for (const [id, {F}] of this._T.frames(this._view.root, DRAW_DEPTH))
+            if (this._T.insideLocal(M.apply(M.inv(M.compose(this._view.R, F)), p))) return id;
+        return null;
+    }
+
     /** @returns {Focus<K>} */
     get focus() { return this._focus; }
 
