@@ -26,6 +26,8 @@ export default class HyperbolicWorkspacesPrefs extends ExtensionPreferences {
         const reset = new Gtk.Button({icon_name: 'edit-undo-symbolic', valign: Gtk.Align.CENTER, tooltip_text: 'Reset to default'});
         reset.connect('clicked', () => settings.reset(KEY));
         settings.connect(`changed::${KEY}`, () => { if (scale.get_value() !== settings.get_double(KEY)) scale.set_value(settings.get_double(KEY)); });
+        scale.update_property([Gtk.AccessibleProperty.LABEL], [row.title]);
+        row.activatable_widget = scale;
         row.add_suffix(scale);
         row.add_suffix(reset);
         group.add(row);
