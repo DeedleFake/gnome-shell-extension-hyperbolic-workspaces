@@ -20,7 +20,7 @@ The extension is in progress. The [web demo](https://deedlefake.github.io/gnome-
 
 ## Settings
 
-Open the extension's preferences to change them.
+Open the extension's preferences to change them. Every setting below has a row there.
 
 - **Focused tile size** (`focused-tile-size`, 1 to 2.5, default 1) grows the focused tile and shrinks the rest. The plane is drawn with straight edges. At 1 each tile's corners sit where the Poincaré disk puts them. At 2 the drawing is exactly the Klein model. From 1.8 up, the neighbor tiles are too small to read, so only the focused workspace's windows can be clicked. The reset button returns it to 1. A change applies the next time the Overview opens.
 - **Move modifier** (`move-modifier`, default Super) turns a drag into a workspace move.
