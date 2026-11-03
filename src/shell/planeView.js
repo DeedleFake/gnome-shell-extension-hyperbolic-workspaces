@@ -78,6 +78,9 @@ class PlaneView extends St.Widget {
 
     /** Something changed (a sync, an intent, a key): reallocate, which runs the clock until ViewState idles. */
     kick() {
+        // Entering a tile hides the Overview, and without animations GNOME destroys this view before the
+        // pointer handler's own kick() runs. New Workspaces built then would leak and trip GC criticals.
+        if (this._destroyed) return;
         this._syncActors();
         this.queue_relayout();
     }
@@ -342,6 +345,7 @@ class PlaneView extends St.Widget {
     endTouchGesture() {}
 
     _onDestroy() {
+        this._destroyed = true;
         if (this._later) global.compositor.get_laters().remove(this._later);
         this._later = 0;
         this._endGrab();

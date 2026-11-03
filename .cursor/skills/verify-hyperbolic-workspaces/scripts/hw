@@ -87,6 +87,7 @@ key) key "$@" ;;
 preview-center) ev "(() => { const all = []; const w = a => { all.push(a); a.get_children().forEach(w); }; w(global.stage); const p = all.find(a => a.constructor.name === 'WindowPreview' && a.metaWindow?.title === '$1' && a.mapped); if (!p) return 'none'; const b = p.get_transformed_extents(); return Math.round(b.get_x() + b.get_width() / 2) + ' ' + Math.round(b.get_y() + b.get_height() / 2); })()" ;; # stage X Y of a window preview's center
 probe-plane) ev "$(cat "$here/probe-plane.js")" ;; # {focusTile, focus, active, size, tiles:{tile: titles}} while the Overview is open
 probe-clicks) ev "$(cat "$here/probe-clicks.js")" ;; # {size, clickable:[titles], blocked:[titles]} by picking each visible preview's center
+empty-tile-point) ev "$(cat "$here/empty-tile-point.js")" >/dev/null 2>&1 || true; ev "globalThis.hwEmptyTilePoint" ;; # stage X Y on an empty reachable tile the plane takes clicks on (the focused one if empty)
 move) ptr "p.notify_absolute_motion(t, $1, $2)" ;;
 click) ptr "p.notify_absolute_motion(t, $1, $2); p.notify_button(t + 1000, C.BUTTON_PRIMARY, C.ButtonState.PRESSED); p.notify_button(t + 2000, C.BUTTON_PRIMARY, C.ButtonState.RELEASED)" ;;
 drag) # drag X1 Y1 X2 Y2 [MOD_KEYVAL_NAME]

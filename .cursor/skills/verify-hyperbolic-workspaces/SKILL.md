@@ -50,6 +50,7 @@ A `state` other than 1 or a non-empty `error` means the extension failed to load
 | `hw probe-plane` | `{focusTile, focus, active, size, tiles}`: which tile is focused and which windows each tile holds |
 | `hw preview-center TITLE` | stage `X Y` of a window preview's center, for `click` and `drag` |
 | `hw probe-clicks` | `{size, clickable, blocked}`: picks each visible window preview's center and reports which previews would take a click |
+| `hw empty-tile-point` | stage `X Y` on an empty reachable tile where a click reaches the plane, the focused tile when it is empty, else `none` |
 | `hw eval 'JS'` | `org.gnome.Shell.Eval`; `Main` and `global` are globals, `imports.gi` works, `import` does not |
 | `hw gget KEY`, `hw gset get\|set\|reset SCHEMA KEY [V]` | GSettings, read as a second view of what the UI wrote |
 | `hw prefs`, `hw prefs-close` | opens the prefs window through `gnome-extensions prefs` and focuses it, or closes it |
