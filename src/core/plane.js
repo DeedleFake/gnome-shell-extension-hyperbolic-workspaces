@@ -143,10 +143,21 @@ export class Plane {
 
     /** Seat per key after `s`, and the motions from the current seats to them. */
     _change(s, log, keyOf, order) {
-        const via = new Map(), times = new Map();
+        /** Every leg each id rode, in op order (a push then its piece's slide is two legs). */
+        const legs = new Map();
         for (const moves of log) for (const m of moves) {
-            via.set(m.id, m.via ?? null);
-            times.set(m.id, (times.get(m.id) ?? 0) + 1);
+            if (m.from === undefined) continue;
+            const list = legs.get(m.id) ?? [];
+            const start = Object.freeze({tile: m.from, down: m.down[0]});
+            const end = Object.freeze({tile: m.to, down: m.down[1]});
+            const v = m.via;
+            if (v && v.from !== m.from) {
+                const mid = Object.freeze({tile: v.from, down: v.down});
+                list.push(Object.freeze({from: start, to: mid, via: null}), Object.freeze({from: mid, to: end, via: {root: v.root, G: v.G}}));
+            } else {
+                list.push(Object.freeze({from: start, to: end, via: v ? {root: v.root, G: v.G} : null}));
+            }
+            legs.set(m.id, list);
         }
         const next = new Map(s.ws.map(w => [keyOf.get(w.id), w]));
         /** @type {Motion<K>[]} */
@@ -155,8 +166,8 @@ export class Plane {
             const from = this._seats.get(k) ?? null, w = next.get(k);
             const to = w ? Object.freeze({tile: w.tile, down: w.down}) : null;
             if (from && to && from.tile === to.tile && from.down === to.down) continue;
-            const v = times.get(this._idOf.get(k)) === 1 ? via.get(this._idOf.get(k)) : null;
-            motions.push(Object.freeze({key: k, from, to, via: v && from && v.from === from.tile ? {root: v.root, G: v.G} : null}));
+            const path = from && to ? legs.get(this._idOf.get(k)) ?? [] : [];
+            motions.push(Object.freeze({key: k, from, to, path: Object.freeze(path)}));
         }
         return Object.freeze({motions: Object.freeze(motions), center: s.anchor});
     }

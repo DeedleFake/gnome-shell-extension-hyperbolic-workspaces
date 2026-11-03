@@ -27,7 +27,7 @@ function checkGroup(plane, wm) {
     assert.ok(occ.has(plane.center), 'the center sits on a workspace');
 }
 
-/** A motion along `via` must be the slide G carrying the old content frame onto the new one, with no turn. */
+/** A leg along `via` must be the slide G carrying the old content frame onto the new one, with no turn. */
 function checkRigid(plane, m) {
     const T = plane.tiling;
     const relP = (a, b) => M.compose(M.inv(T.tiles[a].P), T.tiles[b].P);
@@ -122,7 +122,7 @@ test('property (port of sim.js, 3000 seeded steps): one piece, rigid slides on o
     let seed = 7;
     const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
     const pick = xs => xs[Math.floor(rnd() * xs.length)];
-    let slides = 0, drops = 0, removals = 0;
+    let multi = 0, slides = 0, drops = 0, removals = 0;
     for (let i = 0; i < 3000; i++) {
         const x = rnd(), withWindows = wm.list.filter(k => k.w > 0);
         let change;
@@ -150,16 +150,25 @@ test('property (port of sim.js, 3000 seeded steps): one piece, rigid slides on o
         checkGroup(plane, wm);
         const byRoot = new Map();
         for (const m of change.motions) {
-            if (!m.via) continue;
-            slides++;
-            assert.ok(M.isSlide(m.via.G), 'a piece slides, never turns about a point');
-            checkRigid(plane, m);
-            const G = byRoot.get(m.via.root);
-            if (G) assert.equal(G, m.via.G, 'every member of a piece follows the same G');
-            byRoot.set(m.via.root, m.via.G);
+            if (m.from && m.to) {
+                assert.ok(m.path.length > 0, 'a moved workspace has at least one leg');
+                assert.deepEqual(m.path[0].from, m.from, 'the path starts at the old seat');
+                assert.deepEqual(m.path.at(-1).to, m.to, 'the path ends at the new seat');
+                for (let i = 1; i < m.path.length; i++) assert.deepEqual(m.path[i].from, m.path[i - 1].to, 'legs are continuous');
+            }
+            if (m.path.length > 1) multi++;
+            for (const leg of m.path) {
+                if (!leg.via) continue;
+                slides++;
+                assert.ok(M.isSlide(leg.via.G), 'a piece slides, never turns about a point');
+                checkRigid(plane, leg);
+                const G = byRoot.get(leg.via.root);
+                if (G) assert.equal(G, leg.via.G, 'every member of a piece follows the same G');
+                byRoot.set(leg.via.root, leg.via.G);
+            }
         }
     }
-    assert.ok(slides > 50 && drops > 200 && removals > 200, `exercised slides ${slides}, drops ${drops}, removals ${removals}`);
+    assert.ok(multi > 10 && slides > 50 && drops > 200 && removals > 200, `exercised multi-leg ${multi}, slides ${slides}, drops ${drops}, removals ${removals}`);
 });
 
 test.todo('the active workspace never moves and is never removed, even when another piece must slide (needs the activePiece policy in plane.js; open question)');

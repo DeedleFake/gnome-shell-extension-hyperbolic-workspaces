@@ -19,10 +19,17 @@
  */
 
 /**
- * How one workspace moved in one op. `via` present => member of a piece sliding
- * rigidly along slide G (animate with M.slidePow, never turns).
+ * One leg of a move. `via` present => the leg rides its piece's rigid slide G (animate with
+ * M.slidePow, never turns); null => a straight one-tile push or a settle.
+ * @typedef {Readonly<{from: Seat, to: Seat, via: {root: TileId, G: Frame}|null}>} Leg
+ */
+
+/**
+ * How one workspace moved in one sync or drop. `path` holds every leg in order, so a workspace
+ * pushed and then slid, or moved by two ops in one sync, animates each leg as the demo does.
+ * path[0].from = from and path.at(-1).to = to whenever both seats exist; [] when either is null.
  * @template K
- * @typedef {Readonly<{key: K, from: Seat|null, to: Seat|null, via: {root: TileId, G: Frame}|null}>} Motion
+ * @typedef {Readonly<{key: K, from: Seat|null, to: Seat|null, path: readonly Leg[]}>} Motion
  */
 
 /** Result of every Plane mutation; the only thing ViewState consumes. @template K @typedef {Readonly<{motions: readonly Motion<K>[], center: TileId}>} Change */
