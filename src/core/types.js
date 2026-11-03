@@ -1,4 +1,4 @@
-// Shared JSDoc types for the pure core. No gi:// import anywhere under core/ or disk/{index,klein,fitted}.js.
+// Shared JSDoc types for the pure core. No gi:// import anywhere under core/ or disk/{solve,fitted}.js.
 
 /** @typedef {[number, number]} Complex  Poincaré disk point, [re, im], im up (geometry.js convention). */
 /** SU(1,1) frame z -> (a z + b)/(conj(b) z + conj(a)). @typedef {{a: Complex, b: Complex}} Frame */

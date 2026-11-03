@@ -21,7 +21,7 @@
  * @property {(container: object) => (() => void)} decorate
  *   Model-specific effect on the plane actor; returns undo. straight: no-op.
  *   poincare-shader: radial ShaderEffect. KNOWN COST: GNOME's own picking of previews (hover, close button,
- *   window DnD) follows the Klein transform, not the pixels; making them match needs hand-done
+ *   window DnD) follows the straight-edged transform, not the pixels; making them match needs hand-done
  *   picking inside decorate. Measured in ground/gnome51.md: effects never move picks.
  */
 
@@ -31,7 +31,7 @@ import {poincareShaderModel} from './poincareShader.js';   // imports gi://: thi
 export {SIZE, CLICK_CUTOFF} from './fitted.js';
 
 /**
- * The single place a model is chosen. Node tests import fitted.js / klein.js / solve.js directly.
+ * The single place a model is chosen. Node tests import fitted.js / solve.js directly.
  * @param {'straight'|'poincare-shader'} name @returns {DiskModel}
  */
 export function createDiskModel(name) {

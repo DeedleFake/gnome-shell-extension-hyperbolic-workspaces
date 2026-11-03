@@ -17,8 +17,8 @@ test('only shell/overviewHook.js imports resource:///org/gnome/shell/ui/', async
             assert.equal(f, 'src/shell/overviewHook.js');
 });
 
-test('no gi:// import under core/ or in disk/{solve,klein,fitted}.js', async () => {
-    const pure = f => f.startsWith('src/core/') || ['src/disk/solve.js', 'src/disk/klein.js', 'src/disk/fitted.js'].includes(f);
+test('no gi:// import under core/ or in disk/{solve,fitted}.js', async () => {
+    const pure = f => f.startsWith('src/core/') || ['src/disk/solve.js', 'src/disk/fitted.js'].includes(f);
     for (const f of files.filter(pure))
         assert.ok(!importsOf(await readText(f)).some(s => s.startsWith('gi://')), f);
 });

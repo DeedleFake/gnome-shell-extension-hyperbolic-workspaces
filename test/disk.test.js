@@ -1,6 +1,5 @@
-// The straight-edged DiskModel and its focused tile size remap. 'klein' is the same model at size 2.
+// The straight-edged DiskModel and its focused tile size remap. At size 2 it is the Klein model.
 import {test, assert} from './harness.js';
-import {kleinModel} from '../src/disk/klein.js';
 import {straightModel, remap, SIZE, CLICK_CUTOFF} from '../src/disk/fitted.js';
 import {Plane} from '../src/core/plane.js';
 import {ViewState} from '../src/core/view.js';
@@ -9,17 +8,18 @@ import {applyH} from '../src/disk/solve.js';
 import {M, Tiling} from '../src/core/geometry.js';
 
 const d = {cx: 640, cy: 400, r: 380};
+const dk = {...d, size: 2};
 const box = {w: 1280, h: 768};
 const frames = [M.id(), M.compose(M.to([0.3, -0.2]), M.rot(0.7)), M.compose(M.to([-0.5, 0.4]), M.rot(-2))];
 
-test('klein place: box corners land on the content rectangle in the tile, straight-edged and exact', () => {
+test('size 2 place: box corners land on the content rectangle in the tile, straight-edged and exact', () => {
     const kh = new Tiling(4, 5).kleinHalf;
     for (const F of frames) {
-        const h = kleinModel.place(F, box, d);
+        const h = straightModel.place(F, box, dk);
         const a = 0.96 * box.h / box.w;
         const want = [[-0.96, a], [0.96, a], [0.96, -a], [-0.96, -a]];
         [[0, 0], [box.w, 0], [box.w, box.h], [0, box.h]].forEach(([x, y], i) => {
-            const z = M.apply(M.inv(F), kleinModel.toDisk(...applyH(h, x, y), d));
+            const z = M.apply(M.inv(F), straightModel.toDisk(...applyH(h, x, y), dk));
             const n = 1 + z[0] * z[0] + z[1] * z[1];
             const k = [2 * z[0] / n / kh, 2 * z[1] / n / kh];
             assert.ok(Math.hypot(k[0] - want[i][0], k[1] - want[i][1]) < 1e-6, `corner ${i}: ${k} vs ${want[i]}`);
@@ -27,19 +27,19 @@ test('klein place: box corners land on the content rectangle in the tile, straig
     }
 });
 
-test('klein toDisk inverts place: box points map to the same disk point as the frame does', () => {
+test('size 2 toDisk inverts place: box points map to the same disk point as the frame does', () => {
     for (const F of frames) {
-        const h = kleinModel.place(F, box, d);
+        const h = straightModel.place(F, box, dk);
         const [x, y] = applyH(h, box.w / 2, box.h / 2);
-        const p = kleinModel.toDisk(x, y, d);
+        const p = straightModel.toDisk(x, y, dk);
         const want = M.apply(F, [0, 0]);
         assert.ok(Math.hypot(p[0] - want[0], p[1] - want[1]) < 1e-9, 'the box center is the frame center');
     }
-    assert.equal(kleinModel.toDisk(d.cx + d.r + 1, d.cy, d), null, 'outside the disk is null');
+    assert.equal(straightModel.toDisk(d.cx + d.r + 1, d.cy, dk), null, 'outside the disk is null');
 });
 
-test('klein place culls tiles drawn under 25 px', () => {
-    assert.equal(kleinModel.place(M.to([0.999, 0]), box, d), null);
+test('size 2 place culls tiles drawn under 25 px', () => {
+    assert.equal(straightModel.place(M.to([0.999, 0]), box, dk), null);
 });
 
 test('remap: identity at 1, the Klein radius at 2, monotonic, rim stays the rim', () => {
@@ -66,10 +66,14 @@ test('straight at size 1 puts tile corners where Poincaré has them (the demo\'s
     }
 });
 
-test('straight at size 2 is the Klein model', () => {
+test('straight at size 2 is the Klein model: tile corners sit at 2z/(1+|z|²) of their Poincaré points', () => {
+    const T = new Tiling(4, 5);
     for (const F of frames) {
-        const a = straightModel.place(F, box, {...d, size: 2}), b = kleinModel.place(F, box, d);
-        a.forEach((x, i) => assert.ok(Math.abs(x - b[i]) < 1e-9));
+        const q = straightModel.outline(F, dk);
+        [[-1, 1], [1, 1], [1, -1], [-1, -1]].forEach(([u, v], i) => {
+            const z = M.apply(F, T.local(u, v)), n = 1 + z[0] * z[0] + z[1] * z[1];
+            assert.ok(Math.hypot(q[i][0] - (d.cx + d.r * 2 * z[0] / n), q[i][1] - (d.cy - d.r * 2 * z[1] / n)) < 1e-6, `corner ${i}`);
+        });
     }
 });
 
