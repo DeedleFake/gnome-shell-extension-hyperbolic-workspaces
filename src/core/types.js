@@ -46,7 +46,7 @@
  *   rim: {angle: number, opacity: number} | null}>} FrameSet
  */
 
-/** Screen disk in stage px. @typedef {Readonly<{cx: number, cy: number, r: number}>} DiskRect */
+/** Screen disk in stage px, and the focused tile size remap (1 when absent). @typedef {Readonly<{cx: number, cy: number, r: number, size?: number}>} DiskRect */
 /** 3x3 row-major homography, flat box px -> stage px. @typedef {readonly number[]} H3 */
 
 export {};
