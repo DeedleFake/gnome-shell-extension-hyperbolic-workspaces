@@ -67,6 +67,9 @@ class PlaneView extends St.Widget {
         this.add_child(this._backdrop);
 
         this._later = 0;
+        // The workspace the plane last made active. Anything else changing it (a window or search result
+        // activated from the Overview) wins over the plane's focus when the Overview closes.
+        this._activated = global.workspace_manager.get_active_workspace();
         config.overviewAdjustment.connectObject('notify::value', () => this._syncState(), this);
         this.connect('notify::mapped', () => { if (this.mapped) { this.grab_key_focus(); this.kick(); } });
         this.connect('destroy', () => this._onDestroy());
@@ -204,7 +207,7 @@ class PlaneView extends St.Widget {
         this._cfg.view.nav(nav);
         const f = this._cfg.view.focus;
         if (ACTIVATES.has(nav) && this._cfg.settings.pageKeysActivate && f.kind === 'ws')
-            f.key.activate(global.get_current_time());
+            this._activate(f.key);
         this.kick();
         return Clutter.EVENT_STOP;
     }
@@ -286,7 +289,7 @@ class PlaneView extends St.Widget {
     _enter(tile) {
         const k = this._cfg.plane.at(tile);
         const ws = k ?? this._cfg.windowMoves.openOn(tile);
-        ws.activate(global.get_current_time());
+        this._activate(ws);
         this._cfg.hideOverview();
     }
 
@@ -322,7 +325,17 @@ class PlaneView extends St.Widget {
         return ws ?? {hasMaximizedWindows: () => false};
     }
 
-    prepareToLeaveOverview() { for (const ws of this._actors.values()) ws.prepareToLeaveOverview(); }
+    _activate(ws) {
+        this._activated = ws;
+        ws.activate(global.get_current_time());
+    }
+
+    /** GNOME calls this on every close (Escape, Super, a hide, a swipe): enter the focused workspace. */
+    prepareToLeaveOverview() {
+        const f = this._cfg.view.focus;
+        if (f.kind === 'ws' && global.workspace_manager.get_active_workspace() === this._activated && f.key !== this._activated)
+            this._activate(f.key);
+        for (const ws of this._actors.values()) ws.prepareToLeaveOverview(); }
     /** @param {number[]} stackIndices */
     syncStacking(stackIndices) { for (const ws of this._actors.values()) ws.syncStacking(stackIndices); }
     startTouchGesture() {}
