@@ -10,6 +10,8 @@
  * @property {(content: Frame, box: {w: number, h: number}, d: DiskRect) => H3 | null} place
  *   Homography from a workspace's flat box (work-area aspect, origin top-left) onto its tile.
  *   `content` already carries the down rotation. null <=> drawn under 25 px (app.js:349 rule). Pure.
+ * @property {(tile: Frame, d: DiskRect) => [number, number][]} outline
+ *   A tile's 4 corners (TL, TR, BR, BL) on screen, for the backdrop's tile edges. Pure.
  * @property {(stageX: number, stageY: number, d: DiskRect) => [number, number] | null} toDisk
  *   Inverse of what is painted: stage px -> Poincaré point; null outside the disk. All plane pointer
  *   input goes through this, which is why (c) needs no change elsewhere for pan/carry/click.
