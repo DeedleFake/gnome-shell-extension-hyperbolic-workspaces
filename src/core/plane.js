@@ -14,26 +14,13 @@ import * as G from './geometry.js';
  *            moves: {id: number, from: TileId|undefined, to: TileId, down: [Edge|undefined, Edge], via?: {root: TileId, from: TileId, G: object}}[]}} Placement
  */
 
-/**
- * THE spot for the open question "does the active workspace's piece stay put when connect slides
- * pieces back?". Every geometry result passes through it before the plane commits it.
- * @callback ActivePiecePolicy
- * @param {Placement} proposed  what geometry.js computed
- * @param {{tiling: G.Tiling, before: Placement['state'], activeId: number|null}} ctx
- * @returns {Placement}
- */
-
-/** Default: geometry.js decides, as in the demo. @type {ActivePiecePolicy} */
-export const geometryDecides = proposed => proposed;
-
 const EMPTY = Object.freeze({motions: Object.freeze([]), center: 0});
 
 /** @template {object} K */
 export class Plane {
-    /** @param {{fillOrder?: 'distance'|'rings', activePiece?: ActivePiecePolicy}} [config] */
+    /** @param {{fillOrder?: 'distance'|'rings', }} [config] */
     constructor(config = {}) {
         this._fillOrder = config.fillOrder ?? 'distance';
-        this._activePiece = config.activePiece ?? geometryDecides;
         /** THE side table. Only Plane writes it. @type {WeakMap<K, Seat>} */
         this._seats = new WeakMap();
         /** Placement id per key, for geometry.js, which speaks ids. @type {WeakMap<K, number>} */
@@ -69,7 +56,7 @@ export class Plane {
         for (const k of this._seated) {
             if (live.has(k)) continue;
             const idx = s.ws.findIndex(w => w.id === this._idOf.get(k));
-            s = this._apply(G.removeWorkspace(this._T, s, idx), s, log);
+            s = this._apply(G.removeWorkspace(this._T, s, idx), log);
         }
         for (const k of snap.order) {
             if (!live.has(k) || this._seats.has(k)) continue;
@@ -80,7 +67,7 @@ export class Plane {
             const r = G.openWorkspace(this._T, s, tile, screenDown(tile));
             this._idOf.set(k, r.added.id);
             keyOf.set(r.added.id, k);
-            s = this._apply(r, s, log);
+            s = this._apply(r, log);
         }
         for (const k of this._hints.keys()) if (!snap.order.includes(k)) this._hints.delete(k);
         return this._commit(s, log, keyOf, snap.order);
@@ -99,7 +86,7 @@ export class Plane {
             return {change: none, commit: () => none};
         }
         const gen = this._generation, base = this._state, log = [];
-        const s = this._apply(G.dropWorkspace(this._T, base, id, tile, from), base, log);
+        const s = this._apply(G.dropWorkspace(this._T, base, id, tile, from), log);
         const change = this._change(s, log, this._keyMap(), this._seated);
         const commit = () => gen === this._generation
             ? this._commit(s, log, this._keyMap(), this._seated)
@@ -131,12 +118,10 @@ export class Plane {
         return () => this._pinSources.delete(source);
     }
 
-    /** @param {Placement} r @param {Placement['state']} before @param {Placement['moves'][]} log */
-    _apply(r, before, log) {
-        const activeId = this._active === null ? null : this._idOf.get(this._active) ?? null;
-        const p = this._activePiece(r, {tiling: this._T, before, activeId});
-        log.push(p.moves);
-        return p.state;
+    /** @param {Placement} r @param {Placement['moves'][]} log */
+    _apply(r, log) {
+        log.push(r.moves);
+        return r.state;
     }
 
     _keyMap() { return new Map(this._seated.map(k => [this._idOf.get(k), k])); }

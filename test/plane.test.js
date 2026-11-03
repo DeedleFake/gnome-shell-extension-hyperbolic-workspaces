@@ -171,8 +171,6 @@ test('property (port of sim.js, 3000 seeded steps): one piece, rigid slides on o
     assert.ok(multi > 10 && slides > 50 && drops > 200 && removals > 200, `exercised multi-leg ${multi}, slides ${slides}, drops ${drops}, removals ${removals}`);
 });
 
-test.todo('the active workspace never moves and is never removed, even when another piece must slide (needs the activePiece policy in plane.js; open question)');
-
 test('planDrag preview equals commit; cancel leaves seats untouched; refused for the active key', () => {
     const {plane, view, wm} = setup();
     fill(plane, view, wm, 5);
