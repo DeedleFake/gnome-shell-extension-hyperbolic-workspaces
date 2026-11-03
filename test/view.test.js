@@ -1,0 +1,144 @@
+// ViewState through its public surface, fed by Plane.sync on FakeWm snapshots.
+import {test, assert} from './harness.js';
+import {Plane} from '../src/core/plane.js';
+import {ViewState} from '../src/core/view.js';
+import {M, C, wrapAngle} from '../src/core/geometry.js';
+import {FakeWm, drive, fill} from './fakeWm.js';
+
+const setup = n => {
+    const plane = new Plane();
+    const view = new ViewState({plane});
+    const wm = new FakeWm();
+    drive(plane, view, wm);
+    fill(plane, view, wm, n);
+    return {plane, view, wm};
+};
+const settle = view => { let t = 0; while (view.step(t)) t += 16; return t + 16; };
+const focusedTile = (plane, view) => view.focus.kind === 'ws' ? plane.seatOf(view.focus.key).tile : view.focus.tile;
+
+test('aeeca52: focus on an emptied tile moves to the workspace that slid into it', () => {
+    // Close the focused workspace's last window until a neighbor slides into its tile.
+    for (let n = 4; n < 14; n++) {
+        const {plane, view, wm} = setup(n);
+        for (const k of plane.seated()) {
+            if (k === wm.active) continue;
+            const tile = plane.seatOf(k).tile;
+            view.click(tile);
+            if (view.click(tile) !== 'enter') continue;
+            while (k.w) wm.closeWindow(k);
+            drive(plane, view, wm);
+            const arrived = plane.at(tile);
+            if (arrived === undefined) {
+                assert.deepEqual(view.focus, {kind: 'tile', tile}, 'an emptied tile keeps the focus');
+                continue;
+            }
+            assert.deepEqual(view.focus, {kind: 'ws', key: arrived});
+            return;
+        }
+    }
+    assert.fail('no sequence slid a workspace into the focused emptied tile');
+});
+
+test('FrameSet.content includes the down rotation: content(k) = tile frame ∘ rot(down·90°)', () => {
+    const {plane, view} = setup(6);
+    const t = settle(view);
+    const fs = view.frameOf(t);
+    for (const [k, F] of fs.content) {
+        const seat = plane.seatOf(k);
+        const want = M.compose(fs.tiles.get(seat.tile), M.rot((seat.down * Math.PI) / 2));
+        assert.ok(C.abs2(C.add(M.center(F), C.scale(M.center(want), -1))) < 1e-18, 'same center');
+        assert.ok(Math.abs(wrapAngle(M.split(F).alpha - M.split(want).alpha)) < 1e-9, 'same rotation');
+    }
+    assert.equal(fs.content.size, plane.seated().length);
+});
+
+test('a new workspace is drawn upright: its down edge faces the screen bottom', () => {
+    const {plane, view, wm} = setup(1);
+    view.panBy([0, 0], [0.3, 0.4]);
+    view.panBy([0, 0], [-0.2, 0.3]);
+    wm.openWindow(wm.list.at(-1));
+    drive(plane, view, wm);
+    const k = wm.list.at(-2);
+    const F = view.frameOf(settle(view)).content.get(k);
+    const a = wrapAngle(M.split(F).alpha);
+    assert.ok(Math.abs(a) < Math.PI / 4 + 1e-9, `content frame is within 45° of upright (${a})`);
+});
+
+test('reach is the focused tile, its 4 edge neighbors and its 8 corner neighbors', () => {
+    const {plane, view} = setup(1);
+    const r = view.reach();
+    assert.equal(r.size, 13);
+    const f = focusedTile(plane, view);
+    assert.ok(r.has(f));
+    for (const n of plane.tiling.neighbors(f)) assert.ok(r.has(n));
+});
+
+test('click: first click focuses, a second enters, outside reach is ignored', () => {
+    const {plane, view} = setup(3);
+    const f = focusedTile(plane, view);
+    const n = plane.tiling.neighbors(f)[0];
+    assert.equal(view.click(n), 'focus');
+    assert.equal(focusedTile(plane, view), n);
+    assert.equal(view.click(n), 'enter');
+    const far = [...plane.tiling.rings(n, 3)].find(([, d]) => d === 3)[0];
+    assert.equal(view.click(far), 'ignored');
+    assert.equal(focusedTile(plane, view), n);
+});
+
+test('arrows move focus to the edge neighbor drawn in that direction and center it', () => {
+    const {plane, view} = setup(1);
+    for (const [nav, angle] of [['right', 0], ['up', Math.PI / 2], ['left', Math.PI], ['down', -Math.PI / 2]]) {
+        const fs = view.frameOf(settle(view));
+        const c0 = M.center(fs.tiles.get(focusedTile(plane, view)));
+        view.nav(nav);
+        const to = focusedTile(plane, view);
+        const z = M.center(fs.tiles.get(to));
+        assert.ok(Math.abs(wrapAngle(Math.atan2(z[1] - c0[1], z[0] - c0[0]) - angle)) < Math.PI / 4, nav);
+        const after = view.frameOf(settle(view));
+        assert.ok(C.abs2(M.center(after.tiles.get(to))) < 1e-12, `${nav}: the focused tile ends centered`);
+    }
+});
+
+test('PgUp/PgDn walk seated workspaces in GNOME order; Home returns to the center', () => {
+    const {plane, view, wm} = setup(4);
+    const list = plane.seated();
+    view.click(plane.seatOf(list[0]).tile);
+    settle(view);
+    view.nav('pageDown');
+    assert.deepEqual(view.focus, {kind: 'ws', key: list[1]});
+    view.nav('pageUp');
+    view.nav('pageUp');
+    assert.deepEqual(view.focus, {kind: 'ws', key: list[0]});
+    wm.reorder(list[3], 0);
+    drive(plane, view, wm);
+    view.nav('pageUp');
+    assert.deepEqual(view.focus, {kind: 'ws', key: wm.list[0]}, 'order follows GNOME after a reorder');
+    view.panBy([0, 0], [0.5, 0.2]);
+    view.nav('home');
+    assert.equal(focusedTile(plane, view), plane.center);
+    const fs = view.frameOf(settle(view));
+    const F = fs.content.get(plane.at(plane.center));
+    assert.ok(C.abs2(M.center(F)) < 1e-12 && Math.abs(wrapAngle(M.split(F).alpha)) < 1e-9, 'center workspace is centered and upright');
+});
+
+test('pan moves the drawn plane and keeps the focus', () => {
+    const {plane, view} = setup(2);
+    const t = settle(view), before = view.focus;
+    const c = M.center(view.frameOf(t).tiles.get(plane.center));
+    view.panBy([0, 0], [0.2, 0]);
+    const d = M.center(view.frameOf(t).tiles.get(plane.center));
+    assert.ok(d[0] > c[0] + 0.1);
+    assert.deepEqual(view.focus, before);
+});
+
+test('step reports idle once motions finish, and the rim shows when the group is far', () => {
+    const {view} = setup(2);
+    const t = settle(view);
+    assert.equal(view.step(t), false);
+    assert.equal(view.frameOf(t).rim, null);
+    for (let i = 0; i < 6; i++) view.panBy([0, 0], [0.9, 0]);
+    let fs;
+    for (let s = t; s < t + 1000; s += 16) fs = view.frameOf(s);
+    assert.ok(fs.rim && fs.rim.opacity === 1, 'rim at full opacity');
+    assert.ok(Math.abs(wrapAngle(fs.rim.angle)) < 0.5, `rim points toward the group, which the pan moved to +x (${fs.rim.angle})`);
+});
