@@ -1,0 +1,20 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install glib-compile-schemas
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-bin
+      - name: Syntax and schema check
+        run: sh tools/check.sh
+      - name: Node tests
+        run: npm test
