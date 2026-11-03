@@ -659,6 +659,8 @@ function applyMoves(moves, {follow = true, starts = new Map()} = {}) {
       if (screen) anims.push({kind: "follow", fromTile: m.from, seg: segs[0], screen, t0: now(), dur: DUR * 1.2})
     }
   }
+  // A workspace that slid into the focused empty tile takes the focus.
+  if (focus.tile !== undefined) setFocusTile(focus.tile)
   kick()
 }
 
