@@ -11,6 +11,7 @@ import Meta from 'gi://Meta';
 import Graphene from 'gi://Graphene';
 import St from 'gi://St';
 import {GestureMachine} from '../core/gesture.js';
+import {CLICK_CUTOFF} from '../disk/index.js';
 
 const NAV = {
     [Clutter.KEY_Left]: 'left', [Clutter.KEY_Right]: 'right', [Clutter.KEY_Up]: 'up', [Clutter.KEY_Down]: 'down',
@@ -51,6 +52,7 @@ class PlaneView extends St.Widget {
         /** @type {Map<object, object>} Meta.Workspace -> GNOME Workspace actor */
         this._actors = new Map();
         this._reach = new Set();
+        this._windowReach = new Set();
         this._frame = null;
         this._disk = {cx: 0, cy: 0, r: 1};
         this._carry = null;
@@ -100,7 +102,7 @@ class PlaneView extends St.Widget {
     vfunc_allocate(box) {
         this.set_allocation(box);
         const [w, h] = box.get_size();
-        const d = this._disk = {cx: w / 2, cy: h / 2, r: Math.min(w, h) / 2 * 0.98};
+        const d = this._disk = {cx: w / 2, cy: h / 2, r: Math.min(w, h) / 2 * 0.98, size: this._cfg.settings.focusedTileSize};
         this._backdrop.allocate(new Clutter.ActorBox({x1: 0, y1: 0, x2: w, y2: h}));
         const now = GLib.get_monotonic_time() / 1000;
         const {view, plane, disk} = this._cfg;
@@ -115,6 +117,8 @@ class PlaneView extends St.Widget {
             });
         }
         this._reach = view.reach();
+        // From the cutoff size up the neighbors are too small to read: only the focused workspace's windows take clicks.
+        this._windowReach = d.size >= CLICK_CUTOFF ? new Set([this._focusTile()]) : this._reach;
         const wa = this._cfg.workArea();
         const wbox = {w: wa.width, h: wa.height};
         const seen = new Set();
@@ -128,7 +132,7 @@ class PlaneView extends St.Widget {
             ws.allocate(new Clutter.ActorBox({x1: 0, y1: 0, x2: wa.width, y2: wa.height}));
             ws.set_pivot_point(0, 0);
             ws.set_transform(toMatrix(H));
-            const live = this._carry?.key !== k && this._reach.has(plane.seatOf(k)?.tile);
+            const live = this._carry?.key !== k && this._windowReach.has(plane.seatOf(k)?.tile);
             this._setReactive(ws, live);
         }
         // Culled by opacity and reactivity: toggling visible or restacking mid-allocate makes Clutter warn about stage views.
@@ -160,7 +164,7 @@ class PlaneView extends St.Widget {
                 cr.moveTo(...q[0]);
                 for (const p of q.slice(1)) cr.lineTo(...p);
                 cr.closePath();
-                const a = id === focusTile ? 0.9 : this._reach.has(id) ? 0.45 : 0.22;
+                const a = id === focusTile ? 0.9 : this._windowReach.has(id) ? 0.45 : 0.22;
                 cr.setSourceRGBA(0.45, 0.6, 0.78, a);
                 cr.setLineWidth(id === focusTile ? 2.5 : 1);
                 cr.stroke();
@@ -208,7 +212,7 @@ class PlaneView extends St.Widget {
         const [, x, y] = this.transform_stage_point(sx, sy);
         const d = this._disk;
         const p = this._cfg.disk.toDisk(x, y, d);
-        const tile = p && this._cfg.view.tileAt(p);
+        const tile = p && this._tileAt(x, y);
         const key = tile === null || tile === undefined ? null : this._cfg.plane.at(tile) ?? null;
         const rim = this._frame?.rim;
         const r = Math.hypot(x - d.cx, y - d.cy) / d.r;
@@ -301,11 +305,12 @@ class PlaneView extends St.Widget {
     _dropTile(source, x, y) {
         if (!source.metaWindow) return null;
         const [, lx, ly] = this.transform_stage_point(x, y);
-        const p = this._cfg.disk.toDisk(lx, ly, this._disk);
-        const tile = p && this._cfg.view.tileAt(p);
+        const tile = this._tileAt(lx, ly);
         if (tile === null || tile === undefined || !this._reach.has(tile) || this._cfg.plane.at(tile) !== undefined) return null;
         return tile;
     }
+
+    _tileAt(x, y) { return this._frame ? this._cfg.disk.tileAt(this._frame.tiles, x, y, this._disk) : null; }
 
     getActiveWorkspace() {
         const ws = this._actors.get(global.workspace_manager.get_active_workspace());

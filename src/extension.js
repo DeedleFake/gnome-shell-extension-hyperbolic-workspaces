@@ -14,7 +14,7 @@ export default class HyperbolicWorkspaces extends Extension {
         // Domain state lives enable -> disable; GNOME rebuilds Workspace actors on every Overview open.
         const plane = new Plane({fillOrder: 'distance'});
         const view = new ViewState({plane});
-        const disk = createDiskModel(settings.diskModel);   // the one place the open question is answered
+        const disk = createDiskModel('straight');
         const workspaceManager = global.workspace_manager;
         const windowMoves = createWindowMoves({
             plane, workspaceManager, moveWindow, monitorIndex: () => global.display.get_primary_monitor(),

@@ -3,17 +3,16 @@
   <enum id="org.gnome.shell.extensions.hyperbolic-workspaces.Modifier">
     <value nick="super" value="0"/><value nick="shift" value="1"/><value nick="control" value="2"/><value nick="alt" value="3"/>
   </enum>
-  <enum id="org.gnome.shell.extensions.hyperbolic-workspaces.DiskModel">
-    <value nick="klein" value="0"/><value nick="fitted" value="1"/><value nick="poincare-shader" value="2"/>
-  </enum>
   <schema id="org.gnome.shell.extensions.hyperbolic-workspaces" path="/org/gnome/shell/extensions/hyperbolic-workspaces/">
     <key name="move-modifier" enum="org.gnome.shell.extensions.hyperbolic-workspaces.Modifier">
       <default>'super'</default>
       <summary>Modifier that turns a drag into a workspace move</summary>
     </key>
-    <key name="disk-model" enum="org.gnome.shell.extensions.hyperbolic-workspaces.DiskModel">
-      <default>'klein'</default>
-      <summary>How the disk is drawn (temporary until the open question is answered; the default is a placeholder, not a decision)</summary>
+    <key name="focused-tile-size" type="d">
+      <range min="1" max="2.5"/>
+      <default>1</default>
+      <summary>Focused tile size</summary>
+      <description>Grows the focused tile and shrinks the rest. 1 is the plain straight-edged drawing; 2 is the Klein model. From 1.8 up only the focused workspace's windows can be clicked.</description>
     </key>
     <key name="page-keys-activate" type="b">
       <default>false</default>
