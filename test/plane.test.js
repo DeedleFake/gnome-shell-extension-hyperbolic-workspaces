@@ -81,6 +81,28 @@ test('reserve: the next sync seats the key on the reserved empty tile', () => {
     assert.equal(plane.seatOf(spare).tile, target);
 });
 
+test('entering a reserved tile off the group lands there: the group slides over, keeping its shape', () => {
+    const {plane, view, wm} = setup();
+    fill(plane, view, wm, 3);
+    wm.activate(wm.list[1]);
+    drive(plane, view, wm);
+    const spare = wm.list.at(-1), T = plane.tiling;
+    const occ = new Set(plane.seated().map(k => plane.seatOf(k).tile));
+    const near = new Set([...occ].flatMap(t => T.neighbors(t)));
+    const target = [...near].flatMap(t => T.neighbors(t)).find(t => !occ.has(t) && !near.has(t));
+    const full = wm.list.filter(k => k.w > 0);
+    const before = full.map(k => plane.seatOf(k).tile);
+    plane.reserve(spare, target);
+    wm.activate(spare);
+    drive(plane, view, wm);
+    assert.equal(plane.seatOf(spare).tile, target, 'the active workspace sits on the tile it was entered on');
+    checkGroup(plane, wm);
+    const after = full.map(k => plane.seatOf(k).tile);
+    assert.ok(after.some((t, i) => t !== before[i]), 'the group moved, not the entered workspace');
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++)
+        assert.equal(T.neighbors(after[i]).includes(after[j]), T.neighbors(before[i]).includes(before[j]), 'the group keeps its shape');
+});
+
 test('removal lead: an emptied non-active workspace loses its seat at sync, before flush()', () => {
     const {plane, view, wm} = setup();
     fill(plane, view, wm, 3);

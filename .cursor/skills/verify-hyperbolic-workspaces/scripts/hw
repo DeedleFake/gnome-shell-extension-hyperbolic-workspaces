@@ -89,6 +89,7 @@ preview-center) ev "(() => { const all = []; const w = a => { all.push(a); a.get
 probe-plane) ev "$(cat "$here/probe-plane.js")" ;; # {focusTile, focus, active, size, tiles:{tile: titles}} while the Overview is open
 probe-clicks) ev "$(cat "$here/probe-clicks.js")" ;; # {size, clickable:[titles], blocked:[titles]} by picking each visible preview's center
 empty-tile-point) ev "$(cat "$here/empty-tile-point.js")" >/dev/null 2>&1 || true; ev "globalThis.hwEmptyTilePoint" ;; # stage X Y on an empty reachable tile the plane takes clicks on (the focused one if empty)
+lone-tile-point) ev "$(cat "$here/lone-tile-point.js")" >/dev/null 2>&1 || true; ev "globalThis.hwLoneTilePoint" ;; # TILE X Y: a blank tile touching only the active workspace, where a click reaches the plane
 move) ptr "p.notify_absolute_motion(t, $1, $2)" ;;
 click) ptr "p.notify_absolute_motion(t, $1, $2); p.notify_button(t + 1000, C.BUTTON_PRIMARY, C.ButtonState.PRESSED); p.notify_button(t + 2000, C.BUTTON_PRIMARY, C.ButtonState.RELEASED)" ;;
 drag) # drag X1 Y1 X2 Y2 [MOD_KEYVAL_NAME]
