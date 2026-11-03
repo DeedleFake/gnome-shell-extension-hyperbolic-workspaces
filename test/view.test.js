@@ -142,3 +142,67 @@ test('step reports idle once motions finish, and the rim shows when the group is
     assert.ok(fs.rim && fs.rim.opacity === 1, 'rim at full opacity');
     assert.ok(Math.abs(wrapAngle(fs.rim.angle)) < 0.5, `rim points toward the group, which the pan moved to +x (${fs.rim.angle})`);
 });
+
+const near = (a, b, eps = 1e-6) => Math.hypot(a[0] - b[0], a[1] - b[1]) < eps;
+const movable = (plane, wm) => plane.seated().find(k => k !== wm.active);
+const ringTile = (plane, k, d) => [...plane.tiling.rings(plane.seatOf(k).tile, d)].find(([t, n]) => n === d && plane.at(t) === undefined)[0];
+
+test('the view follows a focused workspace that moves: it stays put on screen while the plane slides', () => {
+    const {plane, view, wm} = setup(5);
+    const k = movable(plane, wm);
+    view.click(plane.seatOf(k).tile);
+    let t = settle(view);
+    const c0 = M.center(view.frameOf(t).content.get(k));
+    const tile = ringTile(plane, k, 2);
+    view.absorb(plane.planDrag(k, tile, plane.tiling.neighbors(tile)[0]).commit());
+    let moved = false; // 170 ms: inside the first leg (a push is 180 ms), which is all the demo follows
+    for (let s = t; s < t + 170; s += 16) {
+        const F = view.frameOf(s).content.get(k);
+        assert.ok(near(M.center(F), c0, 1e-6), `focused workspace holds still at ${s - t} ms`);
+        moved ||= !near(M.center(view.frameOf(s).tiles.get(plane.center)), [0, 0], 1e-3);
+    }
+    assert.ok(moved, 'the plane moved under it');
+});
+
+test('a dropped workspace settles from the pointer frame onto its seat', () => {
+    const {plane, view, wm} = setup(5);
+    const k = movable(plane, wm);
+    const t = settle(view);
+    const tile = ringTile(plane, k, 2), from = plane.tiling.neighbors(tile)[0];
+    const plan = plane.planDrag(k, tile, from);
+    const p = C.add(M.center(view.frameOf(t).tiles.get(tile)), [0.02, -0.01]);
+    view.carry({key: k, p, tile, plan: plan.change});
+    const held = view.frameOf(t).content.get(k);
+    assert.ok(near(M.center(held), p, 1e-9), 'while carried it is drawn centered on the pointer');
+    view.drop(plan.commit());
+    const first = view.frameOf(t + 1).content.get(k);
+    assert.ok(near(M.center(first), M.center(held), 1e-3), 'the settle starts where it was let go');
+    const end = view.frameOf(settle(view)).content.get(k);
+    const seat = plane.seatOf(k);
+    const want = M.compose(view.frameOf(settle(view)).tiles.get(seat.tile), M.rot((seat.down * Math.PI) / 2));
+    assert.ok(near(M.center(end), M.center(want), 1e-9), 'it ends on its seat');
+});
+
+test('carry(null) cancels: everything is drawn on its seat again', () => {
+    const {plane, view, wm} = setup(4);
+    const k = movable(plane, wm);
+    const t = settle(view);
+    const before = M.center(view.frameOf(t).content.get(k));
+    view.carry({key: k, p: [0.5, 0.5], tile: null, plan: null});
+    assert.ok(!near(M.center(view.frameOf(t).content.get(k)), before, 1e-3));
+    view.carry(null);
+    assert.ok(near(M.center(view.frameOf(t).content.get(k)), before, 1e-12));
+});
+
+test('panEnd snaps the tile nearest the center to the center, upright', () => {
+    const {plane, view} = setup(3);
+    settle(view);
+    view.panBy([0, 0], [0.12, 0.05]);
+    view.panEnd();
+    const fs = view.frameOf(settle(view));
+    const centered = [...fs.tiles.values()].filter(F => C.abs2(M.center(F)) < 1e-12);
+    assert.equal(centered.length, 1, 'one tile sits at the center');
+    const q = M.split(centered[0]).alpha / (Math.PI / 2);
+    assert.ok(Math.abs(q - Math.round(q)) < 1e-6, 'it is square to the screen');
+    void plane;
+});

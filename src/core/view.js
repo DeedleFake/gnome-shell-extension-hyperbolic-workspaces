@@ -15,6 +15,17 @@ const ARROW = {right: 0, up: QUARTER, left: Math.PI, down: -QUARTER};
 const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
 const cq = down => M.rot(((down ?? 0) * Math.PI) / 2);
 const nearestQ = alpha => ((Math.round(alpha / QUARTER) % 4) + 4) % 4;
+/** A segment's content frame at eased progress e, relative to its fromTile (app.js segRel). */
+const segRel = (seg, e) => {
+    if (!seg.rigid) return lerpFrame(seg.off, seg.rel, e);
+    const {Fu, G, turn} = seg.rigid;
+    return M.compose(M.compose(M.inv(Fu), M.slidePow(G, e)), M.compose(Fu, M.compose(seg.off, M.rot(turn * e))));
+};
+/** F moved along the line from its center to z, so it ends centered on z with no turn (app.js slideTo). */
+const slideTo = (F, z) => {
+    const A = M.to(M.center(F));
+    return M.compose(M.compose(M.compose(A, M.to(M.apply(M.inv(A), z))), M.inv(A)), F);
+};
 const clamp = (z, r) => { const d = Math.sqrt(C.abs2(z)); return d > r ? C.scale(z, r / d) : z; };
 
 /**
@@ -39,6 +50,10 @@ export class ViewState {
         /** @type {Anim<K>[]} */
         this._anims = [];
         this._rim = {opacity: 0, angle: null, t: null};
+        /** The view holding a moving focused workspace still on screen (app.js "follow"). */
+        this._follow = null;
+        /** @type {{key: K, tile: TileId|null, frame: Frame, preview: Map<K, import('./types.js').Seat>}|null} */
+        this._carry = null;
         this._unpin = config.plane.addPinSource(() => this._pins());
     }
 
@@ -52,11 +67,80 @@ export class ViewState {
             this._anims = this._anims.filter(a => a.key !== m.key);
             if (this._focus.kind === 'ws' && this._focus.key === m.key && !m.to)
                 this._focus = {kind: 'tile', tile: m.from.tile};
-            if (!m.from || !m.to) continue;
-            const segs = [this._slideSeg(m.from, m.to, m.via, DUR * 1.2)];
-            this._anims.push({key: m.key, segs, t0: null, dur: segs[0].dur});
+            if (!m.path.length) continue;
+            const push = m.path.length > 1;
+            const segs = m.path.map(l => this._slideSeg(l.from, l.to, l.via, DUR * (push && !l.via ? 0.6 : 1.2)));
+            this._startAnim(m.key, segs);
+            if (this._focus.kind === 'ws' && this._focus.key === m.key && !this._viewAnim) {
+                const screen = this._content(m.from.tile, m.from.down);
+                if (screen) this._follow = {fromTile: m.from.tile, seg: segs[0], screen, t0: null};
+            }
         }
         if (this._focus.kind === 'tile') this._setFocusTile(this._focus.tile);
+    }
+
+    /**
+     * A modifier-drag in progress: `key` is drawn under the pointer `p` (disk coords) instead of on
+     * its seat, and every other workspace is drawn where `plan` (plane.planDrag(...).change) would
+     * leave it. Over a tile it is drawn as it would land there, slid off to the pointer. null ends
+     * the carry without a drop (cancel).
+     * @param {{key: K, p: [number, number], tile: TileId|null, plan: Change<K>|null} | null} c
+     */
+    carry(c) {
+        if (!c) { this._carry = null; return; }
+        const prev = this._carry?.key === c.key ? this._carry.frame : null;
+        const seat = this._plane.seatOf(c.key);
+        const land = c.tile === null ? null : this._landing(c.plan, c.key, c.tile) ?? seat;
+        const F = land && this._content(c.tile, land.down);
+        const z = clamp(c.p, 0.98);
+        let frame;
+        if (F) frame = slideTo(F, z);
+        else {
+            const from = prev ?? (seat && this._content(seat.tile, seat.down));
+            frame = M.compose(M.to(z), M.rot(from ? M.split(from).alpha : 0));
+        }
+        const preview = new Map();
+        for (const m of c.plan?.motions ?? []) if (m.to) preview.set(m.key, m.to);
+        this._carry = {key: c.key, tile: c.tile, frame, preview};
+    }
+
+    /**
+     * Commit of the carried workspace (plane.planDrag(...).commit()). The dropped workspace settles
+     * from where it was let go onto the tile it was dropped on, then rides any slide back; the view
+     * does not follow it. Without a carry this is absorb.
+     * @param {Change<K>} change
+     */
+    drop(change) {
+        const c = this._carry;
+        this._carry = null;
+        if (!c || c.tile === null) { this.absorb(change); return; }
+        const others = {...change, motions: change.motions.filter(m => m.key !== c.key)};
+        const saved = this._follow;
+        this.absorb(others);
+        const m = change.motions.find(x => x.key === c.key);
+        const base = this._screenFrame(c.tile);
+        if (base) {
+            const seat = m?.to ?? this._plane.seatOf(c.key);
+            const i = m ? m.path.findIndex(l => l.to.tile === c.tile) : -1;
+            const landing = i >= 0 ? m.path[i].to : seat;
+            const off = M.compose(M.inv(base), c.frame);
+            const rest = i >= 0 ? m.path.slice(i + 1) : [];
+            const segs = rest.length
+                ? [{fromTile: c.tile, off, rel: cq(landing.down), dur: DUR * 0.6},
+                    {fromTile: c.tile, off: cq(landing.down), rel: cq(landing.down), dur: DUR * 0.4},
+                    ...rest.map(l => this._slideSeg(l.from, l.to, l.via, DUR * 1.5))]
+                : [{fromTile: c.tile, off, rel: M.compose(this._T.relFrame(c.tile, seat.tile, DRAW_DEPTH) ?? M.id(), cq(seat.down)), dur: DUR * 1.2}];
+            this._anims = this._anims.filter(a => a.key !== c.key);
+            this._startAnim(c.key, segs);
+        }
+        if (this._follow !== saved && this._follow) this._follow = saved;
+        if (this._focus.kind === 'tile') this._setFocusTile(this._focus.tile);
+    }
+
+    /** End of a plain drag: the view snaps so the tile nearest the center sits centered and upright. */
+    panEnd() {
+        this._rebase();
+        this._goTo(this._view.root);
     }
 
     /**
@@ -73,10 +157,12 @@ export class ViewState {
             if (C.abs2(M.center(S)) < INSIDE) tiles.set(id, S);
         }
         const content = new Map();
+        const carry = this._carry;
         for (const k of this._plane.seated()) {
             const anim = this._anims.find(a => a.key === k);
-            const seat = this._plane.seatOf(k);
-            const F = anim ? this._animFrame(anim, nowMs) : this._content(seat.tile, seat.down);
+            const seat = carry?.preview.get(k) ?? this._plane.seatOf(k);
+            const F = carry?.key === k ? carry.frame
+                : anim && !carry?.preview.has(k) ? this._animFrame(anim, nowMs) : this._content(seat.tile, seat.down);
             if (F && C.abs2(M.center(F)) < INSIDE) content.set(k, F);
         }
         return {tiles, content, rim: this._rimAt(content, nowMs)};
@@ -137,6 +223,7 @@ export class ViewState {
     /** Plain drag: view <- M.to(p) ∘ M.to(last)^-1 ∘ view, then rebase. Disk coords. @param {[number, number]} last @param {[number, number]} p */
     panBy(last, p) {
         this._viewAnim = null;
+        this._follow = null;
         this._view.R = M.compose(M.compose(M.to(clamp(p, 0.95)), M.inv(M.to(clamp(last, 0.95)))), this._view.R);
         this._rebase();
     }
@@ -159,10 +246,18 @@ export class ViewState {
             }
             if (done) { this._view.R = va.phases.at(-1).to; this._viewAnim = null; }
         }
+        const fo = this._follow;
+        if (fo) {
+            fo.t0 ??= nowMs;
+            const p = Math.min(1, (nowMs - fo.t0) / fo.seg.dur);
+            this._view.root = fo.fromTile;
+            this._view.R = M.compose(fo.screen, M.inv(segRel(fo.seg, ease(p))));
+            if (p >= 1) { this._follow = null; this._rebase(); }
+        }
         for (const a of this._anims) a.t0 ??= nowMs;
         this._anims = this._anims.filter(a => nowMs - a.t0 < a.dur);
         const rimMoving = this._rim.t !== null && this._rim.opacity !== this._rim.target && nowMs - this._rim.t < RIM_FADE_MS;
-        return this._viewAnim !== null || this._anims.length > 0 || rimMoving;
+        return this._viewAnim !== null || this._follow !== null || this._anims.length > 0 || rimMoving;
     }
 
     /** Edge of `tile` drawn nearest screen bottom now (app.js screenDown). New workspaces take this down. @param {TileId} tile @returns {Edge} */
@@ -178,6 +273,17 @@ export class ViewState {
         return this._focus.kind === 'ws' ? this._plane.seatOf(this._focus.key)?.tile ?? this._plane.center : this._focus.tile;
     }
 
+    _startAnim(key, segs) {
+        this._anims.push({key, segs, t0: null, dur: segs.reduce((x, g) => x + g.dur, 0)});
+    }
+
+    /** Seat `key` would have on `tile` under `plan`: the leg reaching `tile`, else its end seat there. */
+    _landing(plan, key, tile) {
+        const m = plan?.motions.find(x => x.key === key);
+        if (!m) return null;
+        return m.path.find(l => l.to.tile === tile)?.to ?? (m.to?.tile === tile ? m.to : null);
+    }
+
     _setFocusTile(tile) {
         const k = this._plane.at(tile);
         this._focus = k === undefined ? {kind: 'tile', tile} : {kind: 'ws', key: k};
@@ -186,6 +292,8 @@ export class ViewState {
     _pins() {
         const out = [[this._view.root, DRAW_DEPTH + 1], [this._focusTile(), 2]];
         if (this._viewAnim) out.push([this._viewAnim.tile, 2]);
+        if (this._follow) out.push([this._follow.fromTile, 2]);
+        if (this._carry?.tile != null) out.push([this._carry.tile, 2]);
         for (const a of this._anims) for (const s of a.segs) {
             out.push([s.fromTile, 2]);
             if (s.rigid) out.push([s.rigid.root, 2]);
@@ -257,6 +365,7 @@ export class ViewState {
             ? [{from: F0, to: up, dur, rot: true}]
             : [{from: F0, to: drift, dur, rot: false}, {from: drift, to: up, dur: DUR * 0.7, rot: true}];
         this._viewAnim = {tile, phases, t0: null};
+        this._follow = null;
         this._view.root = tile;
         this._view.R = F0;
         this._setFocusTile(tile);
@@ -278,10 +387,7 @@ export class ViewState {
         for (const sg of a.segs) { if (el <= sg.dur) { seg = sg; p = el / sg.dur; break; } el -= sg.dur; }
         const base = this._screenFrame(seg.fromTile);
         if (!base) return null;
-        const e = ease(p);
-        if (!seg.rigid) return M.compose(base, lerpFrame(seg.off, seg.rel, e));
-        const {Fu, G, turn} = seg.rigid;
-        return M.compose(base, M.compose(M.compose(M.inv(Fu), M.slidePow(G, e)), M.compose(Fu, M.compose(seg.off, M.rot(turn * e)))));
+        return M.compose(base, segRel(seg, ease(p)));
     }
 
     /** Rim arrow toward the center: full at scale 0.06, none at 0.15, eased over 200 ms. */
