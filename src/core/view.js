@@ -209,6 +209,12 @@ export class ViewState {
         this._goTo(best);
     }
 
+    /** Focus `key`'s tile unless it is focused already or has none (a workspace switched outside the plane). @param {K} key */
+    focusKey(key) {
+        const seat = this._plane.seatOf(key);
+        if (seat && !(this._focus.kind === 'ws' && this._focus.key === key)) this._goTo(seat.tile);
+    }
+
     /** The rim arrow: fly back to the group's center, upright. */
     recenter() { this._goTo(this._plane.center, true); }
 

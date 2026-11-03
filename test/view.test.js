@@ -230,3 +230,14 @@ test('panEnd snaps the tile nearest the center to the center, upright', () => {
     void plane;
 });
 
+
+test('focusKey focuses a seated workspace switched to outside the plane, and ignores an unseated one', () => {
+    const {plane, view, wm} = setup(5);
+    const other = plane.seated().find(k => k !== wm.active);
+    view.focusKey(other);
+    assert.deepEqual(view.focus, {kind: 'ws', key: other});
+    settle(view);
+    const before = view.focus;
+    view.focusKey({});
+    assert.deepEqual(view.focus, before, 'a key with no tile leaves the focus');
+});

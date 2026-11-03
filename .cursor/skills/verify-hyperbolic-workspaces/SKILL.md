@@ -21,7 +21,7 @@ $S/hw up          # builds image hyperbolic-gs51:verify once (a few minutes), th
 $S/hw scene       # windows Alpha..Delta, each alone on workspaces 1..4; workspace 0 is empty and active
 ```
 
-`up` copies `src/`, `metadata.json` and `schemas/` from this checkout, enables only this extension, and starts `gnome-shell --headless --unsafe-mode --virtual-monitor 1280x800`. It returns once the shell has finished starting and the extension state is `1` (ENABLED). After editing code, run `$S/hw install` to copy the tree again and restart the shell.
+`up` copies `src/`, `metadata.json` and `schemas/` from this checkout, enables only this extension, and starts `gnome-shell --headless --unsafe-mode --virtual-monitor 1280x800`. Set `HW_MONITORS` before `up` for other monitors, for example `HW_MONITORS='1280x800 1024x768'` for a second one on the right. It returns once the shell has finished starting and the extension state is `1` (ENABLED). After editing code, run `$S/hw install` to copy the tree again and restart the shell.
 
 ## Doctor
 
@@ -60,7 +60,7 @@ A `state` other than 1 or a non-empty `error` means the extension failed to load
 
 Prefer user input (`key`, `click`, `drag`, AT-SPI actions) over `eval` that calls extension internals. Use `eval` to read state, not to cause it.
 
-`scripts/prove-prefs.sh` is the full preferences journey and the model for writing others. It asserts each step and logs it.
+`scripts/prove-prefs.sh` is the full preferences journey and the model for writing others. It asserts each step and logs it. `scripts/prove-monitors.sh` checks that a second monitor and the plane agree when `workspaces-only-on-primary` is false.
 
 ## Evidence
 
@@ -84,7 +84,7 @@ A real desktop session differs in these ways. Treat these areas as unverified un
 
 - logind is faked with python-dbusmock, and there is no systemd, GDM or user session. Lock-screen and session-mode changes (which disable extensions) are not exercised.
 - The AT-SPI bus is started by hand, and `toolkit-accessibility` is set to `true`.
-- Rendering is software (llvmpipe) on one virtual 1280x800 monitor. There is no GPU, no second monitor and no touch device.
+- Rendering is software (llvmpipe) on one virtual 1280x800 monitor unless `HW_MONITORS` adds more. There is no GPU and no touch device.
 - `--unsafe-mode` enables Eval and the screenshot API, which a normal session blocks.
 - The extension is copied into `~/.local/share/gnome-shell/extensions/` and enabled through GSettings before the first start. It is not installed from a zip with `gnome-extensions install`.
 - Input comes from Clutter virtual devices. These go through the same event path as a real keyboard and mouse, but no hardware is involved.

@@ -48,6 +48,7 @@ up)
 	docker run -d --name "$I" --label hw-verify=1 "$IMAGE" sleep infinity >/dev/null
 	docker exec "$I" mkdir -p /hw
 	for f in run-headless.sh window.js a11y.py; do docker cp "$here/container/$f" "$I:/hw/$f"; done
+	echo "${HW_MONITORS:-1280x800}" | docker exec -i "$I" sh -c 'cat > /hw/monitors'
 	install
 	docker exec "$I" sh -c "mkdir -p /tmp/xdg && chmod 700 /tmp/xdg"
 	# Enable before the first start: enabled-extensions lives in dconf, which persists in the container across shell restarts.
