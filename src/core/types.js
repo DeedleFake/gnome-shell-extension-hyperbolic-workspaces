@@ -36,7 +36,7 @@
 
 /** Focus may be an empty tile (GNOME keeps an empty active workspace). @template K @typedef {{kind: 'ws', key: K} | {kind: 'tile', tile: TileId}} Focus */
 
-/** Keys the plane owns in the Overview. Closed: everything else stays GNOME's. @typedef {'left'|'right'|'up'|'down'|'pageUp'|'pageDown'|'home'} Nav */
+/** Keys the plane owns in the Overview. Closed: everything else stays GNOME's. @typedef {'left'|'right'|'up'|'down'|'pageUp'|'pageDown'|'home'|'end'} Nav */
 
 /**
  * One frame's drawing input. `content` already includes each workspace's down

@@ -6,7 +6,7 @@
 //   WorkspacesDisplay._updateSwipeTracker      after orig: swipe tracker disabled (it assumes a line)
 //   ThumbnailsBox._updateShouldShow            after orig: never shown (the minimap is a line too)
 // Not patched: WorkspacesView (never built on the primary monitor), Workspace, WindowPreview, search, Enter,
-// Escape. PgUp/PgDn/Home never reach WorkspacesDisplay's binding pool: PlaneView stops them in the display's
+// Escape. PgUp/PgDn/Home/End never reach WorkspacesDisplay's binding pool: PlaneView stops them in the display's
 // captured-event, which runs before the bindings.
 import {InjectionManager} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as DND from 'resource:///org/gnome/shell/ui/dnd.js';
@@ -51,7 +51,7 @@ export class OverviewHook {
                 dragResult: DND.DragMotionResult,
             });
             view.connect('destroy', () => { if (hook._view === view) hook._view = null; });
-            // GNOME focuses the display, so its PgUp/PgDn/Home bindings would fire before ours.
+            // GNOME focuses the display, so its PgUp/PgDn/Home/End bindings would fire before ours.
             this.connectObject('captured-event', (_a, e) => view.handleKey(e), view);
             // Leaving search drops key focus to nothing, where our keys would reach no one.
             Main.overview._overview.controls._searchController.connectObject('notify::search-active', c => {

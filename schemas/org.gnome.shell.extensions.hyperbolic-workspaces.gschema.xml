@@ -16,7 +16,7 @@
     </key>
     <key name="page-keys-activate" type="b">
       <default>false</default>
-      <summary>PgUp/PgDn activate the workspace like GNOME, instead of only moving focus like the demo</summary>
+      <summary>PgUp, PgDn, Home and End activate the workspace like GNOME, instead of only moving focus</summary>
     </key>
   </schema>
 </schemalist>

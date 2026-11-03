@@ -183,17 +183,17 @@ export class ViewState {
     get focus() { return this._focus; }
 
     /**
-     * A key we own. Arrows: drawn edge neighbor nearest the arrow angle. PgUp/PgDn: plane.seated() order.
-     * Home: fly to center, upright. Moves focus only; never activates (demo default; open question).
+     * A key we own. Arrows: drawn edge neighbor nearest the arrow angle. PgUp/PgDn: plane.seated() order,
+     * Home and End: the first and last in that order. Moves focus only; PlaneView decides activation.
      * @param {Nav} nav
      */
     nav(nav) {
-        if (nav === 'home') { this._goTo(this._plane.center, true); return; }
-        if (nav === 'pageUp' || nav === 'pageDown') {
+        if (nav === 'pageUp' || nav === 'pageDown' || nav === 'home' || nav === 'end') {
             const list = this._plane.seated();
             if (!list.length) return;
             const i = this._focus.kind === 'ws' ? list.indexOf(this._focus.key) : -1;
-            const j = i < 0 ? 0 : Math.max(0, Math.min(list.length - 1, i + (nav === 'pageDown' ? 1 : -1)));
+            const j = nav === 'home' ? 0 : nav === 'end' ? list.length - 1
+                : i < 0 ? 0 : Math.max(0, Math.min(list.length - 1, i + (nav === 'pageDown' ? 1 : -1)));
             this._goTo(this._plane.seatOf(list[j]).tile);
             return;
         }
@@ -208,6 +208,9 @@ export class ViewState {
         }
         this._goTo(best);
     }
+
+    /** The rim arrow: fly back to the group's center, upright. */
+    recenter() { this._goTo(this._plane.center, true); }
 
     /**
      * Click on a tile in reach. First click focuses; a click on the already focused tile returns 'enter'.
