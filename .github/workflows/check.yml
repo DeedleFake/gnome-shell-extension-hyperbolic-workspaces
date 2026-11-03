@@ -22,7 +22,10 @@ jobs:
         with:
           ref: prototype
           path: demo
+      # Outside the repo, so the root package.json's "type": "module" does not make Node load it as ESM.
+      - name: Copy the demo's hyper.js out of the repo
+        run: cp demo/hyper.js "$RUNNER_TEMP/hyper.js"
       - name: Node tests
         env:
-          HYPER_JS: ${{ github.workspace }}/demo/hyper.js
+          HYPER_JS: ${{ runner.temp }}/hyper.js
         run: npm test
