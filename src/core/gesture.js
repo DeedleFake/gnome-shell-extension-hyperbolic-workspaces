@@ -12,9 +12,11 @@
  * What the shell should do. Closed union; the shell maps each to one ViewState/Plane call.
  * @template K
  * @typedef {{kind: 'pan', last: [number, number], p: [number, number]}
+ *   | {kind: 'panEnd'}                                         plain drag released: snap the view
  *   | {kind: 'click', tile: TileId}
  *   | {kind: 'rim'}
  *   | {kind: 'carry', key: K, tile: TileId, from: TileId}      hover changed: preview plane.planDrag
+ *   | {kind: 'hold', key: K, p: [number, number]}              pointer moved while carrying: draw it there
  *   | {kind: 'drop', key: K, tile: TileId, from: TileId}       commit the last plan
  *   | {kind: 'cancelCarry'}} Intent
  */
@@ -58,6 +60,7 @@ export class GestureMachine {
             if (ph.mode === 'rim') return ev.onRim ? [{kind: 'rim'}] : [];
             return ph.start.tile !== null ? [{kind: 'click', tile: ph.start.tile}] : [];
         }
+        if (ph.kind === 'panning') return [{kind: 'panEnd'}];
         if (ph.kind === 'carrying')
             return ph.hover === null ? [{kind: 'cancelCarry'}] : [{kind: 'drop', key: ph.key, tile: ph.hover, from: ph.from}];
         return [];
@@ -82,11 +85,14 @@ export class GestureMachine {
             ph.last = ev.p;
             return [{kind: 'pan', last, p: ev.p}];
         }
-        if (ph.kind === 'carrying' && ev.tile !== ph.hover) {
+        if (ph.kind !== 'carrying') return [];
+        const out = [];
+        if (ev.tile !== ph.hover) {
             if (ph.hover !== null) ph.from = ph.hover;
             ph.hover = ev.tile;
-            return ev.tile === null ? [{kind: 'cancelCarry'}] : [{kind: 'carry', key: ph.key, tile: ev.tile, from: ph.from}];
+            out.push(ev.tile === null ? {kind: 'cancelCarry'} : {kind: 'carry', key: ph.key, tile: ev.tile, from: ph.from});
         }
-        return [];
+        if (ev.p) out.push({kind: 'hold', key: ph.key, p: ev.p});
+        return out;
     }
 }

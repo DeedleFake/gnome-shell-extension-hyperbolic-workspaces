@@ -18,6 +18,7 @@ test('motion past the threshold pans from the press point, one step per motion',
     assert.deepEqual(run([ev('press', 0, {tile: 5}), ev('motion', 10), ev('motion', 20), ev('release', 20)]), [
         {kind: 'pan', last: [0, 0], p: [0.1, 0]},
         {kind: 'pan', last: [0.1, 0], p: [0.2, 0]},
+        {kind: 'panEnd'},
     ]);
 });
 
@@ -27,8 +28,11 @@ test('a plain drag on a workspace pans; the move modifier carries it', () => {
     const carry = run([ev('press', 0, {tile: 1, key: W, moveMod: true}), ev('motion', 10, {tile: 1}),
         ev('motion', 20, {tile: 2}), ev('motion', 30, {tile: 3}), ev('release', 30, {tile: 3})]);
     assert.deepEqual(carry, [
+        {kind: 'hold', key: W, p: [0.1, 0]},
         {kind: 'carry', key: W, tile: 2, from: 1},
+        {kind: 'hold', key: W, p: [0.2, 0]},
         {kind: 'carry', key: W, tile: 3, from: 2},
+        {kind: 'hold', key: W, p: [0.3, 0]},
         {kind: 'drop', key: W, tile: 3, from: 2},
     ]);
 });
@@ -39,14 +43,14 @@ test('the move modifier on empty space pans', () => {
 
 test('carrying off the disk cancels the preview, and releasing there cancels the carry', () => {
     const out = run([ev('press', 0, {tile: 1, key: W, moveMod: true}), ev('motion', 10, {tile: 2}),
-        ev('motion', 20, {tile: null}), ev('release', 20, {tile: null})]);
-    assert.deepEqual(out, [{kind: 'carry', key: W, tile: 2, from: 1}, {kind: 'cancelCarry'}, {kind: 'cancelCarry'}]);
+        ev('motion', 20, {tile: null, p: null}), ev('release', 20, {tile: null})]);
+    assert.deepEqual(out.filter(i => i.kind !== 'hold'), [{kind: 'carry', key: W, tile: 2, from: 1}, {kind: 'cancelCarry'}, {kind: 'cancelCarry'}]);
 });
 
 test('cancel ends a carry with cancelCarry and resets the machine', () => {
     const g = new GestureMachine();
     assert.deepEqual(run([ev('press', 0, {tile: 1, key: W, moveMod: true}), ev('motion', 10, {tile: 2}), ev('cancel', 10)], g),
-        [{kind: 'carry', key: W, tile: 2, from: 1}, {kind: 'cancelCarry'}]);
+        [{kind: 'carry', key: W, tile: 2, from: 1}, {kind: 'hold', key: W, p: [0.1, 0]}, {kind: 'cancelCarry'}]);
     assert.deepEqual(run([ev('release', 10, {tile: 2})], g), []);
 });
 
