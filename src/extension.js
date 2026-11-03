@@ -4,7 +4,7 @@ import {Plane} from './core/plane.js';
 import {ViewState} from './core/view.js';
 import {createDiskModel} from './disk/index.js';
 import {WorkspaceSource} from './shell/workspaceSource.js';
-import {OverviewHook} from './shell/overviewHook.js';
+import {OverviewHook, moveWindow} from './shell/overviewHook.js';
 import {Settings} from './shell/settings.js';
 import {createWindowMoves} from './shell/windowMoves.js';
 
@@ -15,18 +15,22 @@ export default class HyperbolicWorkspaces extends Extension {
         const plane = new Plane({fillOrder: 'distance'});
         const view = new ViewState({plane});
         const disk = createDiskModel(settings.diskModel);   // the one place the open question is answered
-        const source = new WorkspaceSource({workspaceManager: global.workspace_manager, display: global.display});
-        const hook = new OverviewHook({
-            plane, view, disk, settings,
-            windowMoves: createWindowMoves({plane, workspaceManager: global.workspace_manager, moveWindow: null /* Main.moveWindowToMonitorAndWorkspace, injected by hook */}),
+        const workspaceManager = global.workspace_manager;
+        const windowMoves = createWindowMoves({
+            plane, workspaceManager, moveWindow, monitorIndex: () => global.display.get_primary_monitor(),
         });
-        source.start(snap => view.absorb(plane.sync(snap, t => view.screenDown(t))));
+        const source = new WorkspaceSource({workspaceManager, display: global.display});
+        const hook = new OverviewHook({plane, view, disk, settings, windowMoves});
+        source.start(snap => {
+            view.absorb(plane.sync(snap, t => view.screenDown(t)));
+            hook.refresh();
+        });
         hook.start();
-        this._parts = [hook, source];   // stop order: hook first
+        this._stop = () => { hook.stop(); source.stop(); view.destroy(); };
     }
 
     disable() {
-        for (const p of this._parts ?? []) p.stop();
-        this._parts = null;
+        this._stop?.();
+        this._stop = null;
     }
 }
