@@ -1,0 +1,115 @@
+#!/bin/sh
+# Drives one isolated headless GNOME Shell 51 instance with this checkout's extension. See ../SKILL.md.
+set -eu
+export DOCKER_HOST=${DOCKER_HOST:-tcp://127.0.0.1:2375}
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/../../../.." && pwd)
+I=${HW_INSTANCE:-hw-verify}
+IMAGE=${HW_IMAGE:-hyperbolic-gs51:verify}
+EV=${HW_EVIDENCE:-/workspace/hw-evidence/$I}
+UUID=$(sed -n 's/.*"uuid": *"\([^"]*\)".*/\1/p' "$repo/metadata.json")
+SCHEMA=org.gnome.shell.extensions.hyperbolic-workspaces
+EXT=/root/.local/share/gnome-shell/extensions/$UUID
+[ "$I" = gs51 ] && { echo "refusing to drive gs51: it belongs to other agents" >&2; exit 2; }
+
+x() { docker exec "$I" sh -c "export DBUS_SESSION_BUS_ADDRESS=\$(cat /tmp/bus) XDG_RUNTIME_DIR=/tmp/xdg WAYLAND_DISPLAY=wayland-0; $1"; }
+ev() { docker exec "$I" sh -c 'export DBUS_SESSION_BUS_ADDRESS=$(cat /tmp/bus); gdbus call --session -d org.gnome.Shell -o /org/gnome/Shell -m org.gnome.Shell.Eval "$1"' _ "$1"; }
+wait_eval() { for _ in $(seq 60); do o=$(ev "$1" 2>/dev/null || true); case $o in *"$2"*) echo "$o"; return 0;; esac; sleep 1; done; echo "timeout waiting for $2: $o" >&2; return 1; }
+start_shell() {
+	docker exec "$I" sh -c 'pid=$(pgrep -x gnome-shell) && kill $pid && sleep 2; setsid /hw/run-headless.sh </dev/null >/dev/null 2>&1 &'
+	sleep 3
+	wait_eval "Main.layoutManager._startingUp === false && Main.extensionManager.lookup('$UUID')?.state" "true, '1'"
+}
+install() {
+	docker exec "$I" sh -c "rm -rf $EXT && mkdir -p $EXT"
+	(cd "$repo/src" && git ls-files --cached --others --exclude-standard . | tar -cf - -T -) | docker exec -i "$I" tar -xf - -C "$EXT"
+	(cd "$repo" && tar -cf - metadata.json schemas) | docker exec -i "$I" tar -xf - -C "$EXT"
+	docker exec "$I" glib-compile-schemas "$EXT/schemas"
+	docker exec "$I" sh -c "mkdir -p /root/.config/glib-2.0/settings"
+}
+gs() { x "gsettings --schemadir $EXT/schemas $*"; }
+key() { # key KEYVAL_NAME [MOD_KEYVAL_NAME]: virtual keyboard press, optionally holding a modifier key
+	ev "(() => { const {Clutter, GLib} = imports.gi; const s = global.stage.context.get_backend().get_default_seat();
+	globalThis.hwKbd ??= s.create_virtual_device(Clutter.InputDeviceType.KEYBOARD_DEVICE); const k = globalThis.hwKbd, t = GLib.get_monotonic_time();
+	const m = '${2:-}' ? Clutter['KEY_${2:-x}'] : 0, v = Clutter['KEY_$1']; if (v === undefined) return 'unknown key';
+	if (m) k.notify_keyval(t, m, Clutter.KeyState.PRESSED); k.notify_keyval(t, v, Clutter.KeyState.PRESSED);
+	k.notify_keyval(t, v, Clutter.KeyState.RELEASED); if (m) k.notify_keyval(t, m, Clutter.KeyState.RELEASED); return 'key $1'; })()"
+}
+ptr() { # ptr 'JS using p (virtual pointer), t (time), C (Clutter)'
+	ev "(() => { const {Clutter: C, GLib} = imports.gi; const s = global.stage.context.get_backend().get_default_seat();
+	globalThis.hwPtr ??= s.create_virtual_device(C.InputDeviceType.POINTER_DEVICE); const p = globalThis.hwPtr, t = GLib.get_monotonic_time(); $1; return 'ok'; })()"
+}
+
+cmd=${1:-help}; [ $# -gt 0 ] && shift
+case $cmd in
+up)
+	sh "$here/hw-image.sh"
+	docker ps -a --format '{{.Names}}' | grep -qx "$I" && { echo "$I already exists; run '$0 down' first" >&2; exit 1; }
+	docker run -d --name "$I" --label hw-verify=1 "$IMAGE" sleep infinity >/dev/null
+	docker exec "$I" mkdir -p /hw
+	for f in run-headless.sh window.js a11y.py; do docker cp "$here/container/$f" "$I:/hw/$f"; done
+	install
+	docker exec "$I" sh -c "mkdir -p /tmp/xdg && chmod 700 /tmp/xdg"
+	# Enable before the first start: enabled-extensions lives in dconf, which persists in the container across shell restarts.
+	docker exec "$I" sh -c "dbus-run-session -- sh -c \"gsettings set org.gnome.shell enabled-extensions \\\"['$UUID']\\\"; gsettings set org.gnome.shell disable-user-extensions false\"" 2>/dev/null
+	start_shell >/dev/null
+	mkdir -p "$EV"
+	echo "up: $I (evidence: $EV)" ;;
+doctor)
+	docker ps --filter "name=^/$I\$" --format '{{.Names}} {{.Status}} {{.Image}}' | grep . || { echo "FAIL container $I not running"; exit 1; }
+	echo "shell pid: $(docker exec "$I" pgrep -x gnome-shell || echo none)"
+	ev 'Config.PACKAGE_VERSION'
+	ev "JSON.stringify({state: Main.extensionManager.lookup('$UUID')?.state, error: Main.extensionManager.lookup('$UUID')?.error ?? null, ws: global.workspace_manager.n_workspaces, overview: Main.overview.visible})"
+	installed=$(docker exec "$I" sh -c "cd $EXT && find . -name '*.js' -type f | sort | xargs cat | sha1sum")
+	local_=$(cd "$repo/src" && find . -name '*.js' -type f | sort | xargs cat | sha1sum)
+	[ "$installed" = "$local_" ] && echo "installed src matches checkout ($(cd "$repo" && git rev-parse --short HEAD))" || echo "WARN installed src differs from checkout; run '$0 install'" ;;
+install) install; start_shell >/dev/null; echo "reinstalled and restarted" ;;
+restart) start_shell ;;
+eval) ev "$1" ;;
+shot)
+	mkdir -p "$EV"; ev 'true' >/dev/null
+	x "gdbus call --session -d org.gnome.Shell.Screenshot -o /org/gnome/Shell/Screenshot -m org.gnome.Shell.Screenshot.Screenshot false false /tmp/hw-shot.png" >/dev/null
+	docker cp "$I:/tmp/hw-shot.png" "$EV/$1.png" >/dev/null; echo "$EV/$1.png" ;;
+window)
+	x "gjs -m /hw/window.js '$1' ${2:-700} ${3:-450} > /tmp/win-$1.log 2>&1 &"
+	wait_eval "global.display.list_all_windows().some(w => w.title === '$1')" "true, 'true'" >/dev/null; echo "window $1" ;;
+scene) # four windows Alpha..Delta, each alone on its own workspace, with an empty active workspace 0
+	ev 'Main.overview.hide(); "ok"' >/dev/null
+	for n in Alpha Beta Gamma Delta; do
+		"$0" window $n >/dev/null
+		ev "(() => { const wm = global.workspace_manager; const w = global.display.list_all_windows().find(w => w.title === '$n'); w.change_workspace_by_index(wm.n_workspaces - 1, true); wm.get_workspace_by_index(0).activate(global.get_current_time()); return 'ok'; })()" >/dev/null
+		sleep 1
+	done
+	"$0" workspaces ;;
+workspaces) ev '(() => { const wm = global.workspace_manager; const o = []; for (let i = 0; i < wm.n_workspaces; i++) o.push(i + ":" + wm.get_workspace_by_index(i).list_windows().map(w => w.title).join(",")); return "active=" + wm.get_active_workspace_index() + " " + o.join(" | "); })()' ;;
+overview) ev "Main.overview.${1:-show}(); 'ok'" >/dev/null; sleep 2; ev 'Main.overview.visible' ;;
+key) key "$@" ;;
+preview-center) ev "(() => { const all = []; const w = a => { all.push(a); a.get_children().forEach(w); }; w(global.stage); const p = all.find(a => a.constructor.name === 'WindowPreview' && a.metaWindow?.title === '$1' && a.mapped); if (!p) return 'none'; const b = p.get_transformed_extents(); return Math.round(b.get_x() + b.get_width() / 2) + ' ' + Math.round(b.get_y() + b.get_height() / 2); })()" ;; # stage X Y of a window preview's center
+probe-plane) ev "$(cat "$here/probe-plane.js")" ;; # {focusTile, focus, active, size, tiles:{tile: titles}} while the Overview is open
+probe-clicks) ev "$(cat "$here/probe-clicks.js")" ;; # {size, clickable:[titles], blocked:[titles]} by picking each visible preview's center
+move) ptr "p.notify_absolute_motion(t, $1, $2)" ;;
+click) ptr "p.notify_absolute_motion(t, $1, $2); p.notify_button(t + 1000, C.BUTTON_PRIMARY, C.ButtonState.PRESSED); p.notify_button(t + 2000, C.BUTTON_PRIMARY, C.ButtonState.RELEASED)" ;;
+drag) # drag X1 Y1 X2 Y2 [MOD_KEYVAL_NAME]
+	[ -n "${5:-}" ] && ev "(() => { const {Clutter, GLib} = imports.gi; const s = global.stage.context.get_backend().get_default_seat(); globalThis.hwKbd ??= s.create_virtual_device(Clutter.InputDeviceType.KEYBOARD_DEVICE); globalThis.hwKbd.notify_keyval(GLib.get_monotonic_time(), Clutter.KEY_$5, Clutter.KeyState.PRESSED); return 'mod down'; })()" >/dev/null
+	ptr "p.notify_absolute_motion(t, $1, $2); p.notify_button(t + 1000, C.BUTTON_PRIMARY, C.ButtonState.PRESSED)" >/dev/null
+	for s in 1 2 3 4 5 6 7 8 9 10; do ptr "p.notify_absolute_motion(t, $1 + ($3 - $1) * $s / 10, $2 + ($4 - $2) * $s / 10)" >/dev/null; sleep 0.05; done
+	ptr "p.notify_button(t, C.BUTTON_PRIMARY, C.ButtonState.RELEASED)" >/dev/null
+	[ -n "${5:-}" ] && ev "(() => { const {Clutter, GLib} = imports.gi; globalThis.hwKbd.notify_keyval(GLib.get_monotonic_time(), Clutter.KEY_$5, Clutter.KeyState.RELEASED); return 'mod up'; })()" >/dev/null
+	echo dragged ;;
+gset) gs "$@" ;; # gset get|set|reset|monitor <key> [value]   (schema id is filled in)
+gget) gs get "$SCHEMA" "$1" ;;
+prefs) # opens the prefs window the way the Extensions app does, outside the Overview, and gives it keyboard focus
+	ev 'Main.overview.hide(); "ok"' >/dev/null
+	x "gnome-extensions prefs $UUID"
+	wait_eval "global.display.list_all_windows().map(w => w.title).join('|')" "Hyperbolic Workspaces" >/dev/null
+	sleep 1
+	ev "(() => { const w = global.display.list_all_windows().find(w => w.title === 'Hyperbolic Workspaces'); w.activate(global.get_current_time()); return global.display.focus_window?.title; })()" ;;
+prefs-close) ev "global.display.list_all_windows().filter(w => w.title?.includes('Hyperbolic Workspaces')).forEach(w => w.delete(global.get_current_time())); 'ok'" ;;
+a11y) x "A11Y_APP='${A11Y_APP:-org.gnome.Shell.Extensions}' python3 /hw/a11y.py $(printf "'%s' " "$@")" ;;
+logs) docker exec "$I" sh -c "tail -n ${1:-80} /tmp/shell.log" ;;
+grab-logs) mkdir -p "$EV"; docker cp "$I:/tmp/shell.log" "$EV/shell.log" >/dev/null; echo "$EV/shell.log" ;;
+down)
+	[ -f "$EV/shell.log" ] || docker cp "$I:/tmp/shell.log" "$EV/shell.log" 2>/dev/null || true
+	docker rm -f "$I" >/dev/null && echo "removed $I; evidence kept in $EV" ;;
+*) sed -n '/^case/,/^esac/p' "$0" | grep -o '^[a-z-]*)' ; exit 2 ;;
+esac
