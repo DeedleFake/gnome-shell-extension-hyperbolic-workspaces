@@ -4,6 +4,48 @@ A GNOME Shell 51 extension that lays out workspaces on a {4,5} hyperbolic plane 
 
 The extension is in progress. The [web demo](https://deedlefake.github.io/gnome-shell-extension-hyperbolic-workspaces/) on the `prototype` branch shows the intended behavior.
 
+## Install
+
+The extension supports GNOME Shell 51 only. Install it from source.
+
+1. Clone the repository and enter it:
+
+   ```sh
+   git clone https://github.com/DeedleFake/gnome-shell-extension-hyperbolic-workspaces.git
+   cd gnome-shell-extension-hyperbolic-workspaces
+   ```
+
+2. Copy the extension into your extensions directory. The directory name must be the extension's UUID, `hyperbolic-workspaces@deedlefake.github.io`:
+
+   ```sh
+   mkdir -p ~/.local/share/gnome-shell/extensions/hyperbolic-workspaces@deedlefake.github.io
+   cp -r src/. metadata.json schemas ~/.local/share/gnome-shell/extensions/hyperbolic-workspaces@deedlefake.github.io/
+   ```
+
+3. Compile the settings schema:
+
+   ```sh
+   glib-compile-schemas ~/.local/share/gnome-shell/extensions/hyperbolic-workspaces@deedlefake.github.io/schemas
+   ```
+
+4. Log out and log back in. On Wayland, GNOME Shell finds new extensions only when it starts.
+
+5. Enable the extension:
+
+   ```sh
+   gnome-extensions enable hyperbolic-workspaces@deedlefake.github.io
+   ```
+
+6. Check that it loaded:
+
+   ```sh
+   gnome-extensions info hyperbolic-workspaces@deedlefake.github.io
+   ```
+
+   The output shows `State: ACTIVE` when the extension is running.
+
+To update, run `git pull`, repeat steps 2 and 3, and log out and back in.
+
 ## Run the checks
 
 - `sh tools/check.sh` runs `node --check` on every `.js` file and compiles the schema with `glib-compile-schemas --strict --dry-run`. It uses the `gs51` container when the host has no `glib-compile-schemas`.
