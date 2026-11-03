@@ -6,11 +6,17 @@ const OPTIONS = {
   backMs: {300: "300 ms", 600: "600 ms", 1000: "1000 ms"},
   snap: {on: "On", off: "Off"},
   moveMod: {shift: "Shift", alt: "Alt", ctrl: "Ctrl", ctrlalt: "Ctrl+Alt"},
-  model: {klein: "Klein", fitted: "Fitted", poincare: "Poincaré"},
+  model: {straight: "Straight edges", poincare: "Poincaré curves"},
 }
 const opt = {orient: "after", back: "visual", backMs: "600", snap: "on", moveMod: "shift"}
 const params = new URLSearchParams(location.search)
-opt.model = OPTIONS.model[localStorage.getItem("hyperbolic.model")] ? localStorage.getItem("hyperbolic.model") : "poincare"
+// Stored choices from the three-mode version map onto the two modes; a stored
+// Klein becomes straight edges at the Klein size.
+const SIZE = {min: 1, max: 2.5, klein: 2, step: 0.05, clickCutoff: 1.8}
+const storedModel = localStorage.getItem("hyperbolic.model")
+opt.model = storedModel === "poincare" ? "poincare" : "straight"
+opt.size = +(localStorage.getItem("hyperbolic.size") ?? (storedModel === "klein" ? SIZE.klein : 1))
+if (!(opt.size >= SIZE.min && opt.size <= SIZE.max)) opt.size = 1
 for (const k of Object.keys(opt)) if (params.has(k)) opt[k] = params.get(k)
 const DUR = +(params.get("dur") ?? 300)
 // Held when a drag starts on a workspace, this moves the workspace instead of panning.
@@ -240,27 +246,34 @@ function resize() {
 }
 window.addEventListener("resize", resize)
 
+// Focused tile size: a Poincaré radius r is drawn at tanh(size * atanh(r)).
+// Size 1 is the identity and size 2 is the Klein radius 2r/(1+r^2). It is
+// monotonic and keeps the rim at the rim for every size.
+function remap(z, size = opt.size) {
+  const r = Math.hypot(z[0], z[1])
+  if (size === 1 || r === 0 || r >= 1) return z
+  return C.scale(z, Math.tanh(size * Math.atanh(r)) / r)
+}
 const toScreen = (z) => [cx + R * z[0], cy - R * z[1]]
-// A canvas point as a Poincaré disk point. In Klein the canvas shows the
-// Klein disk, so the point is converted back; Fitted keeps Poincaré positions.
+const drawn = (z) => toScreen(remap(z))
+// A canvas point as a Poincaré disk point: the remap undone.
 function toDisk(x, y) {
   const k = [(x - cx) / R, -(y - cy) / R]
-  if (opt.model !== "klein" || C.abs2(k) >= 1) return k
-  return C.scale(k, 1 / (1 + Math.sqrt(1 - C.abs2(k))))
+  return remap(k, 1 / opt.size)
 }
 const toKlein = (z) => C.scale(z, 2 / (1 + C.abs2(z)))
 
-// The plane drawn three ways, all from the same frames. Poincaré bends every
-// line. Klein is the projective model: a tile is an exact perspective image of
-// its flat square. Fitted puts the square's corners where Poincaré has them
-// and fills the straight quad between with the perspective map through them.
-// Klein and Fitted are what a 4x4 actor transform can draw.
+// The plane drawn two ways from the same frames. Poincaré bends every line.
+// Straight edges put each tile's corners where the remapped Poincaré drawing
+// has them and fill the quad between with the perspective map through them,
+// which is what a 4x4 actor transform can draw. At the Klein size this is
+// exactly the Klein model.
 const SQ = [[-1, -1], [1, -1], [1, 1], [-1, 1]]
-const homCache = new WeakMap()
+let homCache = new WeakMap()
 function homography(F) {
   let h = homCache.get(F)
   if (h) return h
-  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = SQ.map(([u, v]) => toScreen(M.apply(F, T.local(u, v))))
+  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = SQ.map(([u, v]) => drawn(M.apply(F, T.local(u, v))))
   const dx1 = x1 - x2, dx2 = x3 - x2, dx3 = x0 - x1 + x2 - x3, dy1 = y1 - y2, dy2 = y3 - y2, dy3 = y0 - y1 + y2 - y3
   const den = dx1 * dy2 - dx2 * dy1
   const g = (dx3 * dy2 - dx2 * dy3) / den, hh = (dx1 * dy3 - dx3 * dy1) / den
@@ -270,8 +283,7 @@ function homography(F) {
 }
 // Screen point of local point z (as from T.local) in a tile with frame F.
 function project(F, z) {
-  if (opt.model === "poincare") return toScreen(M.apply(F, z))
-  if (opt.model === "klein") return toScreen(toKlein(M.apply(F, z)))
+  if (opt.model === "poincare") return drawn(M.apply(F, z))
   const k = toKlein(z), s = (k[0] / T.kleinHalf + 1) / 2, t = (k[1] / T.kleinHalf + 1) / 2
   const H = homography(F), w = H.g * s + H.h * t + 1
   return [(H.a * s + H.b * t + H.c) / w, (H.d * s + H.e * t + H.f) / w]
@@ -611,12 +623,14 @@ function tileLabel(tile) {
 }
 const focusLabel = () => { const t = focusTile(); return t === null ? "none" : tileLabel(t) }
 // Tiles whose windows take clicks: the focused one and every tile sharing an
-// edge or a corner with it.
+// edge or a corner with it. From the click cutoff size up the neighbors are
+// too small to read, so only the focused tile's windows take clicks.
 const CORNERS = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([u, v]) => T.local(u, v))
 const reachCache = new Map()
 function reach() {
   const f = focusTile()
   if (f === null) return new Set()
+  if (opt.size >= SIZE.clickCutoff) return new Set([f])
   if (!reachCache.has(f)) {
     const near = (a, b) => C.abs2(C.add(a, C.scale(b, -1))) < 1e-9
     const out = new Set()
@@ -1125,9 +1139,9 @@ function dropWindow(d) {
 // Klein tiles are exactly the Poincaré tiles moved, so the disk test holds;
 // a Fitted tile is its straight corner quad.
 function hitTest(z) {
-  const [x, y] = toScreen(z)
+  const [x, y] = drawn(z)
   for (const [id, F] of visCache ?? visible()) {
-    if (opt.model === "fitted" ? insidePoly(SQ.map((c) => project(F, T.local(...c))), x, y) : T.insideLocal(M.apply(M.inv(F), z))) return id
+    if (opt.model === "straight" ? insidePoly(SQ.map((c) => project(F, T.local(...c))), x, y) : T.insideLocal(M.apply(M.inv(F), z))) return id
   }
   return null
 }
@@ -1148,9 +1162,10 @@ window.addEventListener("keydown", (e) => {
   else if (e.key === "o") openWindow()
   else if (e.key === "c") closeWindow(false)
   else if (e.key === "x" || e.key === "Delete") closeWindow(true)
-  else if (e.key === "m") setModel(Object.keys(OPTIONS.model)[(Object.keys(OPTIONS.model).indexOf(opt.model) + 1) % 3])
+  else if (e.key === "m") setModel(Object.keys(OPTIONS.model)[(Object.keys(OPTIONS.model).indexOf(opt.model) + 1) % 2])
 })
-function setModel(v) { opt.model = v; localStorage.setItem("hyperbolic.model", v); syncPanel(); kick() }
+function setSize(v) { opt.size = Math.min(SIZE.max, Math.max(SIZE.min, +v)); localStorage.setItem("hyperbolic.size", opt.size); homCache = new WeakMap(); syncPanel(); kick() }
+function setModel(v) { opt.model = v; localStorage.setItem("hyperbolic.model", v); homCache = new WeakMap(); syncPanel(); kick() }
 
 for (const el of document.querySelectorAll("[data-opt]")) {
   const k = el.dataset.opt
@@ -1162,7 +1177,13 @@ for (const el of document.querySelectorAll("[data-opt]")) {
     el.appendChild(b)
   }
 }
+const sizeEl = document.getElementById("size")
+Object.assign(sizeEl, {min: SIZE.min, max: SIZE.max, step: SIZE.step})
+sizeEl.oninput = () => setSize(sizeEl.value)
+document.getElementById("sizeReset").onclick = () => setSize(1)
 function syncPanel() {
+  sizeEl.value = opt.size
+  document.getElementById("sizeVal").textContent = `${opt.size.toFixed(2)}${opt.size === SIZE.klein ? " (Klein)" : ""}${opt.size >= SIZE.clickCutoff ? ", focused windows only" : ""}`
   for (const el of document.querySelectorAll("[data-opt]"))
     for (const b of el.children) b.classList.toggle("on", opt[el.dataset.opt] === b.dataset.v)
 }
@@ -1187,6 +1208,7 @@ window.app = {
   screenAngle,
   windowOutlines,
   reach: () => [...reach()],
+  setSize, SIZE, get size() { return opt.size },
   tileAt: (x, y) => hitTest(toDisk(x, y)),
   enters: () => (desk?.phase === "in" ? [{tile: desk.tile, win: desk.pickedIndex}] : []),
   get desk() { return desk && {tile: desk.tile, phase: desk.phase, picked: desk.picked, added: desk.added} },

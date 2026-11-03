@@ -27,9 +27,10 @@
       Drag empty space to pan. Right-drag or the wheel rotates. Hold the move key (below) and drag a workspace to move it.<br>
       Arrows: neighbor tile. PgUp/PgDn: walk the workspaces with windows. Home: back to the center. The center follows the group: if its workspace empties, it moves to the nearest one with windows. When the group is too far to see, a yellow arrow on the edge points to it; click it to go back.<br>
       O: open a window on the focused tile. C: close one. X: close all. Enter: enter. On the desktop, drag title bars, click to raise, × to close; Overview or Escape goes back.<br>
-      M or "Disk drawing" switches the plane between Klein (straight edges, exact perspective tiles), Fitted (straight edges through the curved drawing's corners) and Poincaré (curved, the default).
+      M or "Disk drawing" switches between straight edges (the default) and Poincaré curves. "Focused tile size" grows the focused tile and shrinks the rest; 1 is the plain drawing, 2 makes straight edges the Klein model. From 1.8 up, the neighbors are too small to read, so only the focused workspace's windows take clicks.
     </div>
     <h2>Disk drawing (M)</h2><div class="opts" data-opt="model"></div>
+    <h2>Focused tile size</h2><div class="opts"><input type="range" id="size"> <span id="sizeVal"></span> <button id="sizeReset">Reset</button></div>
     <h2>Arrow keys</h2><div class="opts" data-opt="back"></div>
     <h2>"Right away" means within</h2><div class="opts" data-opt="backMs"></div>
     <h2>Orientation</h2><div class="opts" data-opt="orient"></div>
