@@ -1,0 +1,31 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install glib-compile-schemas
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libglib2.0-bin
+      - name: Syntax and schema check
+        run: sh tools/check.sh
+      # After check.sh, so its git ls-files does not pick up the demo's files.
+      - name: Check out the demo for the geometry parity test
+        uses: actions/checkout@v4
+        with:
+          ref: prototype
+          path: demo
+      # Outside the repo, so the root package.json's "type": "module" does not make Node load it as ESM.
+      - name: Copy the demo's hyper.js out of the repo
+        run: cp demo/hyper.js "$RUNNER_TEMP/hyper.js"
+      - name: Node tests
+        env:
+          HYPER_JS: ${{ runner.temp }}/hyper.js
+        run: npm test
