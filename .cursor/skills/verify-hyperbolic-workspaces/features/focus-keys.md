@@ -27,6 +27,6 @@ Preconditions:
 
 ## Gotchas
 
-- `Return` does not enter the focused workspace yet. As of `06445c6`, it leaves `active=0` and the Overview open. Report that as a missing feature, not a harness fault.
+- `Return` leaves the Overview open, as in stock GNOME 51. Escape closes it and enters the focused workspace (see [entering a workspace](./enter-workspace.md)).
 - Any held modifier other than Lock or NumLock makes the plane ignore the key. Release modifiers from an earlier `drag` before testing keys.
 - `End` is not bound by the plane yet and still does what it does in GNOME.
