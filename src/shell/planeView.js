@@ -45,7 +45,7 @@ export const PlaneView = GObject.registerClass(
 class PlaneView extends St.Widget {
     /**
      * @param {{plane, view, disk, windowMoves, settings, monitorIndex: number, overviewAdjustment: object,
-     *          WorkspaceClass: Function, workArea: () => {width: number, height: number}, hideOverview: () => void,
+     *          WorkspaceClass: Function, followFocus: (ws: object) => void, workArea: () => {width: number, height: number}, hideOverview: () => void,
      *          dragResult: {CONTINUE: number, MOVE_DROP: number}}} config
      */
     _init(config) {
@@ -70,6 +70,15 @@ class PlaneView extends St.Widget {
         // The workspace the plane last made active. Anything else changing it (a window or search result
         // activated from the Overview) wins over the plane's focus when the Overview closes.
         this._activated = global.workspace_manager.get_active_workspace();
+        // A switch outside the plane (another monitor's thumbnails, a window or search result) moves the focus,
+        // so every monitor agrees and the plane enters what was switched to.
+        global.workspace_manager.connectObject('active-workspace-changed', wm => {
+            this._activated = wm.get_active_workspace();
+            config.view.focusKey(this._activated);
+            this.kick();
+        }, this);
+        config.view.focusKey(this._activated);
+        this._followed = null;
         config.overviewAdjustment.connectObject('notify::value', () => this._syncState(), this);
         this.connect('notify::mapped', () => { if (this.mapped) { this.grab_key_focus(); this.kick(); } });
         this.connect('destroy', () => this._onDestroy());
@@ -82,6 +91,8 @@ class PlaneView extends St.Widget {
         // pointer handler's own kick() runs. New Workspaces built then would leak and trip GC criticals.
         if (this._destroyed) return;
         this._syncActors();
+        const f = this._cfg.view.focus;
+        if (f.kind === 'ws' && f.key !== this._followed) this._cfg.followFocus(this._followed = f.key);
         this.queue_relayout();
     }
 

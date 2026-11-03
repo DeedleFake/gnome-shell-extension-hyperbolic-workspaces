@@ -14,6 +14,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as WorkspacesView from 'resource:///org/gnome/shell/ui/workspacesView.js';
 import * as Workspace from 'resource:///org/gnome/shell/ui/workspace.js';
 import * as WorkspaceThumbnail from 'resource:///org/gnome/shell/ui/workspaceThumbnail.js';
+import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import {PlaneView} from './planeView.js';
 
@@ -25,6 +26,13 @@ export function watchSessionMode(cb) {
     const id = Main.sessionMode.connect('updated', () => cb(Main.sessionMode.currentMode));
     cb(Main.sessionMode.currentMode);
     return () => Main.sessionMode.disconnect(id);
+}
+
+/** Other monitors' views follow the shared scroll adjustment; ease it like WorkspacesDisplay._activeWorkspaceChanged. */
+function followOn(adj, index) {
+    if (adj.value === index && !adj.get_transition('value')) return;
+    adj.remove_transition('value');
+    adj.ease(index, {duration: 250, mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
 }
 
 export class OverviewHook {
@@ -46,6 +54,7 @@ export class OverviewHook {
                 monitorIndex: i,
                 overviewAdjustment: this._overviewAdjustment,
                 WorkspaceClass: Workspace.Workspace,
+                followFocus: ws => this._workspacesOnlyOnPrimary || followOn(this._scrollAdjustment, ws.index()),
                 workArea: () => Main.layoutManager.getWorkAreaForMonitor(i),
                 hideOverview: () => Main.overview.hide(),
                 dragResult: DND.DragMotionResult,
