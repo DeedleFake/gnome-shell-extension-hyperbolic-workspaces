@@ -20,7 +20,7 @@ export class WorkspaceSource {
     start(onChange) {
         this._onChange = onChange;
         const wm = this._cfg.workspaceManager;
-        const q = () => this._queue();
+        const q = () => this.queue();
         this._ids = [
             wm.connect('notify::n-workspaces', () => { this._watchWorkspaces(); q(); }),
             wm.connect('workspaces-reordered', q),
@@ -62,7 +62,9 @@ export class WorkspaceSource {
         return Object.freeze({order: Object.freeze(order), hasWindows, active: wm.get_active_workspace()});
     }
 
-    _queue() {
+    /** Sync from one GLib idle; a no-op while stopped. */
+    queue() {
+        if (!this._onChange) return;
         if (this._idle) return;
         this._idle = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
             this._idle = 0;
@@ -77,7 +79,7 @@ export class WorkspaceSource {
         for (let i = 0; i < wm.n_workspaces; i++) {
             const ws = wm.get_workspace_by_index(i);
             for (const sig of ['window-added', 'window-removed'])
-                this._wsIds.push([ws, ws.connect(sig, () => this._queue())]);
+                this._wsIds.push([ws, ws.connect(sig, () => this.queue())]);
         }
     }
 

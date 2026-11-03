@@ -17,10 +17,11 @@ export default class HyperbolicWorkspaces extends Extension {
         const view = new ViewState({plane});
         const disk = createDiskModel('straight');
         const workspaceManager = global.workspace_manager;
+        const source = new WorkspaceSource({workspaceManager, display: global.display});
         const windowMoves = createWindowMoves({
             plane, workspaceManager, moveWindow, monitorIndex: () => global.display.get_primary_monitor(),
+            resync: () => source.queue(),
         });
-        const source = new WorkspaceSource({workspaceManager, display: global.display});
         const hook = new OverviewHook({plane, view, disk, settings, windowMoves});
         source.start(snap => {
             view.absorb(plane.sync(snap, t => view.screenDown(t)));

@@ -12,6 +12,8 @@ active() { "$hw" workspaces | sed -n 's/.*active=\([0-9]*\).*/\1/p'; }
 
 # The virtual pointer starts in the top-left hot corner; leaving it there toggles the Overview on the first move.
 "$hw" move 640 760 >/dev/null; sleep 0.5
+# Start on Alpha: entering a blank tile from an empty workspace moves that one instead of opening another.
+"$hw" eval "global.get_window_actors().map(a => a.meta_window).find(w => w.title === 'Alpha').get_workspace().activate(global.get_current_time())" >/dev/null; sleep 1
 before=$(crit); start=$(active)
 "$hw" overview show >/dev/null; sleep 2.5
 # The first click focuses an empty tile and the second enters it; one click enters an already focused one.
