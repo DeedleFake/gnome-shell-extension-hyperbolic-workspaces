@@ -33,5 +33,11 @@ export default class HyperbolicWorkspacesPrefs extends ExtensionPreferences {
         group.add(row);
         page.add(group);
         window.add(page);
+        // GTK picks its own first focus when the window activates, so take it back once then.
+        const id = window.connect('notify::is-active', () => {
+            if (!window.is_active) return;
+            window.disconnect(id);
+            scale.grab_focus();
+        });
     }
 }
