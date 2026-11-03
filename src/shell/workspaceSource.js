@@ -1,25 +1,74 @@
 // Adapter from Mutter to Plane.sync. Reads GNOME; never writes workspace order (no reorder_workspace).
 // Holds signal ids only; the Meta.Workspace -> seat map is the Plane's WeakMap.
 /** @import {Snapshot} from '../core/types.js' */
+import GLib from 'gi://GLib';
 
 export class WorkspaceSource {
     /** @param {{workspaceManager: object, display: object}} config  global.workspace_manager, global.display */
-    constructor(config) { this._cfg = config; this._ids = []; }
+    constructor(config) { this._cfg = config; this._ids = []; this._wsIds = []; this._idle = 0; this._onChange = null; }
 
     /**
      * Connect notify::n-workspaces, workspaces-reordered, active-workspace-changed, and per-workspace
      * window-added/window-removed (reconnected on n-workspaces). Each fires `onChange(this.snapshot())`
-     * from one GLib idle, so a burst of signals is one sync. Runs with the Overview closed too.
+     * from one GLib idle, so a burst of signals is one sync. Calls onChange once now. Runs with the Overview closed too.
      * @param {(snap: Snapshot<object>) => void} onChange
      */
-    start(onChange) { throw new Error('not implemented'); }
-    /** Idempotent. */
-    stop() { throw new Error('not implemented'); }
+    start(onChange) {
+        this._onChange = onChange;
+        const wm = this._cfg.workspaceManager;
+        const q = () => this._queue();
+        this._ids = [
+            wm.connect('notify::n-workspaces', () => { this._watchWorkspaces(); q(); }),
+            wm.connect('workspaces-reordered', q),
+            wm.connect('active-workspace-changed', q),
+        ];
+        this._watchWorkspaces();
+        onChange(this.snapshot());
+    }
 
-    /**
-     * Fresh read: order = get_workspace_by_index(0..n), hasWindows = list_windows() has a
-     * non-skip-taskbar normal window on the primary monitor (same rule as WorkspaceTracker), active.
-     * @returns {Snapshot<object>}
-     */
-    snapshot() { throw new Error('not implemented'); }
+    /** Idempotent. */
+    stop() {
+        const wm = this._cfg.workspaceManager;
+        for (const id of this._ids) wm.disconnect(id);
+        this._ids = [];
+        this._unwatch();
+        if (this._idle) GLib.source_remove(this._idle);
+        this._idle = 0;
+        this._onChange = null;
+    }
+
+    /** @returns {Snapshot<object>} */
+    snapshot() {
+        const wm = this._cfg.workspaceManager;
+        const order = [];
+        for (let i = 0; i < wm.n_workspaces; i++) order.push(wm.get_workspace_by_index(i));
+        const primary = this._cfg.display.get_primary_monitor();
+        const hasWindows = ws => ws.list_windows().some(w =>
+            !w.skip_taskbar && !w.is_on_all_workspaces() && w.get_monitor() === primary);
+        return Object.freeze({order: Object.freeze(order), hasWindows, active: wm.get_active_workspace()});
+    }
+
+    _queue() {
+        if (this._idle) return;
+        this._idle = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            this._idle = 0;
+            this._onChange?.(this.snapshot());
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _watchWorkspaces() {
+        this._unwatch();
+        const wm = this._cfg.workspaceManager;
+        for (let i = 0; i < wm.n_workspaces; i++) {
+            const ws = wm.get_workspace_by_index(i);
+            for (const sig of ['window-added', 'window-removed'])
+                this._wsIds.push([ws, ws.connect(sig, () => this._queue())]);
+        }
+    }
+
+    _unwatch() {
+        for (const [ws, id] of this._wsIds) ws.disconnect(id);
+        this._wsIds = [];
+    }
 }
