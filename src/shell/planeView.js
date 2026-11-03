@@ -19,7 +19,7 @@ const NAV = {
     [Clutter.KEY_End]: 'end',
 };
 /** Keys that switch the workspace too when page-keys-activate is on. */
-const ACTIVATES = new Set(['pageUp', 'pageDown', 'end']);
+const ACTIVATES = new Set(['pageUp', 'pageDown', 'home', 'end']);
 const RIM_HIT = 0.15;
 
 /**
@@ -261,7 +261,7 @@ class PlaneView extends St.Widget {
         switch (i.kind) {
         case 'pan': view.panBy(i.last, i.p); break;
         case 'panEnd': view.panEnd(); break;
-        case 'rim': view.nav('home'); break;
+        case 'rim': view.recenter(); break;
         case 'click':
             if (view.click(i.tile) === 'enter') this._enter(i.tile);
             break;

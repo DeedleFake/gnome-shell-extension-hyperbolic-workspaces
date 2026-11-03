@@ -99,7 +99,7 @@ test('arrows move focus to the edge neighbor drawn in that direction and center 
     }
 });
 
-test('PgUp/PgDn walk seated workspaces in GNOME order; Home returns to the center', () => {
+test('PgUp/PgDn walk seated workspaces in GNOME order; the rim arrow returns to the group', () => {
     const {plane, view, wm} = setup(4);
     const list = plane.seated();
     view.click(plane.seatOf(list[0]).tile);
@@ -114,7 +114,7 @@ test('PgUp/PgDn walk seated workspaces in GNOME order; Home returns to the cente
     view.nav('pageUp');
     assert.deepEqual(view.focus, {kind: 'ws', key: wm.list[0]}, 'order follows GNOME after a reorder');
     view.panBy([0, 0], [0.5, 0.2]);
-    view.nav('home');
+    view.recenter();
     assert.equal(focusedTile(plane, view), plane.center);
     const fs = view.frameOf(settle(view));
     const F = fs.content.get(plane.at(plane.center));
@@ -131,6 +131,17 @@ test('End focuses the last seated workspace in GNOME order', () => {
     assert.deepEqual(view.focus, {kind: 'ws', key: plane.seated().at(-1)}, 'End follows GNOME order after a reorder');
     view.nav('pageDown');
     assert.deepEqual(view.focus, {kind: 'ws', key: plane.seated().at(-1)}, 'PgDn past the last stays on it');
+});
+
+test('Home focuses the first seated workspace in GNOME order', () => {
+    const {plane, view, wm} = setup(4);
+    view.nav('end');
+    view.nav('home');
+    assert.deepEqual(view.focus, {kind: 'ws', key: plane.seated()[0]});
+    wm.reorder(plane.seated()[2], 0);
+    drive(plane, view, wm);
+    view.nav('home');
+    assert.deepEqual(view.focus, {kind: 'ws', key: wm.list[0]}, 'Home follows GNOME order after a reorder');
 });
 
 test('pan moves the drawn plane and keeps the focus', () => {
