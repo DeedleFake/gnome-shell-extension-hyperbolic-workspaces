@@ -313,7 +313,7 @@ WorkspaceMoves == [][(last'.act = "movews" /\ last'.tile # Out /\ s.seat[last'.s
                          /\ s'.active = s.active /\ s'.ov = "open")]_vars
 \* R26 (code only)
 DropOutsideCancels == [][(last'.act = "movews" /\ last'.tile = Out) => s' = s]_vars
-\* R27 (O4): a modifier-drag moves the active workspace like any other. Finding F3.
+\* R27 (O4): a modifier-drag moves the active workspace like any other. Was finding F3.
 ActiveWorkspaceMoves == [][(last'.act = "movews" /\ last'.tile # Out /\ s.seat[last'.src] = s.active)
                            => (s'.seat[last'.tile] = s.active /\ s'.win = s.win
                                /\ s'.active = s.active /\ s'.ov = "open")]_vars
@@ -326,7 +326,7 @@ EmptyHopKeepsWorkspace == [][(IsClose /\ s.seat[s.focus] = None /\ s.win[s.activ
 \* R34
 EscapeClearsSearchFirst == [][(last'.act = "escape" /\ s.search) => (s'.ov = "open" /\ ~s'.search)]_vars
 
-\* R18 (O1): a click farther out than reach focuses that tile. Finding F2.
+\* R18 (O1): a click farther out than reach focuses that tile. Was finding F2.
 FarClickFocuses == [][(last'.act \in {"clicktile", "clickwindow"} /\ last'.tile \notin Reach(s.focus))
                       => (s'.focus = last'.tile /\ s'.ov = "open")]_vars
 ====

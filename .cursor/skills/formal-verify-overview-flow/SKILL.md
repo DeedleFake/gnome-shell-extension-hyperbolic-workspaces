@@ -12,7 +12,7 @@ The Overview on the primary monitor is a state machine. The user opens it, moves
 ## Run
 
 ```sh
-.cursor/skills/formal-verify-overview-flow/scripts/check-overview-flow            # decided rules and known findings
+.cursor/skills/formal-verify-overview-flow/scripts/check-overview-flow            # decided rules and any known findings (none today)
 .cursor/skills/formal-verify-overview-flow/scripts/check-overview-flow --pending  # also any rules waiting on a design call (none today)
 .cursor/skills/formal-verify-overview-flow/scripts/check-overview-flow --only WindowDrops
 ```
@@ -25,7 +25,7 @@ Results:
 
 - `PASS decided`: every decided rule holds in the model of this code.
 - `FAIL <Rule>`: a decided rule breaks. Exit 1. The counterexample is in `out/decided.out`.
-- `KNOWN <Rule>`: a rule in the Findings below still breaks, as expected.
+- `KNOWN <Rule>`: a rule in the Findings below still breaks, as expected. There are none today.
 - `FIXED? <Rule>`: a known finding now holds. Exit 1 until you confirm the fix and update this file.
 - `BREAKS` or `HOLDS` (with `--pending`): a rule waiting on a design call. These never fail the run. The list is empty today.
 - `covered code changed since sync commit`: see Keeping in step.
@@ -34,18 +34,18 @@ Read every result with the `/statechart` skill. Give it `out/OverviewFlow.tla`, 
 
 ## Rules
 
-R numbers are the rule numbers of the design recall (`decided` means the user decided it, `code only` means only the code says so and the user has not decided it, `finding` means the user decided it and `master` breaks it). A state rule is a TLC INVARIANT. A step rule is a PROPERTY `[][Step]_vars` that reads the state before and after the step.
+R numbers are the rule numbers of the design recall (`decided` means the user decided it, and `code only` means only the code says so and the user has not decided it). A state rule is a TLC INVARIANT. A step rule is a PROPERTY `[][Step]_vars` that reads the state before and after the step.
 
 | Rule | R | Kind | What must be true |
 | --- | --- | --- | --- |
 | `OpeningFocusesActive` | 1 | decided | Opening the Overview focuses the active workspace. |
 | `ClosingEntersFocused` | 2, 31, 32 | decided | Escape outside search, Super, any other close, or a click on the focused tile enters the focused tile, a blank one included. |
 | `SearchPickWins` | 3 | decided | Picking a search result on another workspace, or on the focused tile, leaves with that workspace active. |
-| `ActiveSearchPickWins` | 3 | finding F1 | Same, for a result on the active workspace while the focus is on another tile. |
+| `ActiveSearchPickWins` | 3 | decided | Same, for a result on the active workspace while the focus is on another tile. |
 | `WindowClickLeaves` | 17 | decided | A click on a window preview in reach leaves with its workspace active, when the window is on another workspace or on the focused tile. |
-| `ActiveWindowClickLeaves` | 17 | finding F1 | Same, for a window on the active workspace while the focus is on another tile. |
+| `ActiveWindowClickLeaves` | 17 | decided | Same, for a window on the active workspace while the focus is on another tile. |
 | `NearClickFocuses` | 4, 16 | decided | A click on a neighbor tile focuses it and changes nothing else. |
-| `FarClickFocuses` | 18 | finding F2 | A click on a tile farther out than reach, or on a window there, focuses that tile and does not leave. |
+| `FarClickFocuses` | 18 | decided | A click on a tile farther out than reach, or on a window there, focuses that tile and does not leave. |
 | `CutoffNeighborClickFocuses` | 19 | decided | From size 1.8, a click on a neighbor's window focuses that tile and does not leave. |
 | `ArrowMovesToNeighbor` | 8 | decided | An arrow moves the focus to a neighbor and changes nothing else. |
 | `PageKeysActivateSetting` | 13 | decided | With `page-keys-activate` on, the page keys also switch workspace. Off, they only move focus. The Overview stays open. |
@@ -54,7 +54,7 @@ R numbers are the rule numbers of the design recall (`decided` means the user de
 | `WindowDrops` | 21, 22 | decided | A window dragged inside reach and dropped on another reachable workspace joins it. On a blank reachable tile it opens a new workspace. Anywhere else nothing changes. A drag outside reach pans. |
 | `WorkspaceMoves` | 23, 24 | decided | A modifier-drag puts a workspace other than the active one on the tile it is dropped on. |
 | `DropOutsideCancels` | 26 | code only | A workspace dropped outside the disk changes nothing. |
-| `ActiveWorkspaceMoves` | 27 | finding F3 | A modifier-drag moves the active workspace to the tile it is dropped on, like any other workspace. |
+| `ActiveWorkspaceMoves` | 27 | decided | A modifier-drag moves the active workspace to the tile it is dropped on, like any other workspace. |
 | `RimReturnsToGroup` | 28 | decided | The rim arrow focuses a workspace in the group. |
 | `PanReleaseFocusesNearest` | 30 | decided | Releasing a pan focuses the tile nearest the center and changes nothing else. |
 | `EmptyHopKeepsWorkspace` | 33 | decided | Entering a blank tile from an empty active workspace moves that workspace there. |
@@ -67,22 +67,22 @@ R numbers are the rule numbers of the design recall (`decided` means the user de
 
 The user answered O1 to O5 on 2026-11-04.
 
-- O1. A far-tile click focuses the tile. Checked by `FarClickFocuses`, finding F2.
+- O1. A far-tile click focuses the tile. Checked by `FarClickFocuses`.
 - O2. The page keys follow GNOME's normal order, with no timing of their own. An empty workspace you are on stays in the order until GNOME removes it after its usual short delay. Checked by `PageKeysFollowGnomeOrder`, which `master` holds.
 - O3. The three-way arrow-key setting is dropped by the user. Nothing to model.
-- O4. The active workspace must be draggable like any other. Checked by `ActiveWorkspaceMoves`, finding F3.
+- O4. The active workspace must be draggable like any other. Checked by `ActiveWorkspaceMoves`.
 - O5. Releasing a pan focuses the tile nearest the center. Checked by `PanReleaseFocusesNearest`.
 - O6. Still open: what happens on other monitors with "workspaces on primary display only" off. Out of the model's scope until the user answers.
 
 ## Findings
 
-F1. Clicking a window, or picking a search result, on the active workspace while the focus is on another tile closes the Overview on the focused tile, not on the window's workspace. Rules 3 and 17 break (`ActiveSearchPickWins`, `ActiveWindowClickLeaves`). GNOME's `Main.activateWindow` switches workspace only when the window is on another one, so no `active-workspace-changed` fires, the focus does not follow, and `prepareToLeaveOverview` then enters the focused tile. When that tile is blank, it opens a new empty workspace there.
+None open. A finding is a decided rule that the code breaks. List it here with its shortest path, and add its rule to `KNOWN` in the script.
 
-Shortest path in the model: open the Overview, press an arrow to a neighbor, drag that neighbor's only window onto the active workspace, click that window. Replayed against `1c5ef4e` in the container with a shorter path: switch to Alpha's workspace, open the Overview, press Right (the focus moves to a blank tile), click Alpha's preview. The Overview closed on a new empty workspace 4 and no window had focus. The search-result case follows the same code path and was not replayed.
+The first run found three, and all three are fixed. Each one's rule is now in the decided list.
 
-F2. A click on a tile farther out than reach does nothing. Rule 18 breaks (`FarClickFocuses`). `ViewState.click` returns `'ignored'` for any tile outside `reach()` (`core/view.js:226`). Shortest path in the model: open the Overview, press an arrow, click a tile two steps from the new focus. Not replayed in the container, because the guard is a plain early return.
-
-F3. A modifier-drag of the active workspace does nothing. Rule 27 breaks (`ActiveWorkspaceMoves`). `Plane.planDrag` returns an empty plan when `key === this._active` (`core/plane.js:91`). Shortest path in the model: open the Overview, modifier-drag the active workspace E onto A's tile. Not replayed in the container, for the same reason. The model's move is abstract, so removing the guard makes the rule hold in the model, but the real slide-back with the active workspace is unchecked (see Scope).
+- F1. A window click, or a search pick, on the active workspace while the focus sat on another tile closed the Overview on the focused tile. GNOME switches nothing for a window on the active workspace, so the focus did not follow. Now a window's `raised` signal, which GNOME emits for every activation, moves the focus to that window's workspace (step `Raise`, fact `RaiseMovesFocus`).
+- F2. A click on a tile farther out than reach did nothing, because `ViewState.click` returned `'ignored'` there. Now the click focuses the tile. Only a click on the focused tile enters.
+- F3. A modifier-drag of the active workspace did nothing, because `Plane.planDrag` refused the active key. That guard is gone. `test/plane.test.js` checks the real slide-back and connectivity with the active workspace moved, and `prove-picks-and-reach.sh` checks it in the container.
 
 ## Scope
 
@@ -98,14 +98,14 @@ The model abstracts these, so a pass says nothing about them:
 
 ## Coverage record
 
-Sync commit: `1c5ef4e` (the code at this commit was checked against the model).
+Sync commit: `06c6855` (the code at this commit was checked against the model).
 
-- `shell/planeView.js`: `_init` (open, `active-workspace-changed`), `vfunc_allocate` (window reach), `handleKey`, `vfunc_captured_event`, `_apply`, `_enter`, `_workspaceOn`, `_dropTile`, `_activate`, `prepareToLeaveOverview`.
+- `shell/planeView.js`: `_init` (open, `active-workspace-changed`, each window's `raised`), `vfunc_allocate` (window reach), `handleKey`, `vfunc_captured_event`, `_apply`, `_enter`, `_workspaceOn`, `_dropTile`, `_activate`, `prepareToLeaveOverview`.
 - `shell/overviewHook.js`: `PlaneWorkspace._shouldLeaveOverview`, `_updateWorkspacesViews`.
 - `shell/windowMoves.js`: `openOn`, `dropOn`.
 - `core/view.js`: `reach`, `nav`, `focusKey`, `recenter`, `click`, `panEnd`.
 - `core/gesture.js`: `handle` (click, cancelCarry).
-- `core/plane.js`: `sync` (live set, removal), `planDrag` (refusals), `_commit` (seated order).
+- `core/plane.js`: `sync` (live set, removal), `planDrag` (refusals, none for the active key), `_commit` (seated order).
 - `disk/fitted.js`: `CLICK_CUTOFF`.
 
 ## Real bug or modeling error
@@ -129,7 +129,7 @@ For a full pass after changes that did not recheck this, use `/maintain-formal-v
 
 ## Proof that the check can fail
 
-Each decided rule was seen to fail on a scratch edit of the real code, which was then reverted. `TypeOK` has no code to break. Each known finding was seen to turn `FIXED?` when its guard was removed.
+Each decided rule was seen to fail on a scratch edit of the real code, which was then reverted. `TypeOK` has no code to break. While F1 to F3 were open, each turned `FIXED?` when its guard was removed.
 
 | Rule | Scratch edit |
 | --- | --- |
@@ -138,7 +138,7 @@ Each decided rule was seen to fail on a scratch edit of the real code, which was
 | `SearchPickWins` | delete `focusKey` from the `active-workspace-changed` handler |
 | `WindowClickLeaves` | `PlaneWorkspace._shouldLeaveOverview` returns `false` |
 | `NearClickFocuses` | delete `this._goTo(tile);` from `ViewState.click` |
-| `FarClickFocuses` | 18 | finding F2 | A click on a tile farther out than reach, or on a window there, focuses that tile and does not leave. |
+| `FarClickFocuses` | put back `if (!this.reach().has(tile)) return 'ignored';` at the top of `ViewState.click` |
 | `CutoffNeighborClickFocuses` | compare `d.size >= 99` for the window reach |
 | `ArrowMovesToNeighbor` | `this._goTo(from);` at the end of `nav` |
 | `PageKeysActivateSetting` | `&& false` in place of `&& f.kind === 'ws'` in `handleKey` |
@@ -153,5 +153,6 @@ Each decided rule was seen to fail on a scratch edit of the real code, which was
 | `OneEmptyWorkspace` | `continue;` without the `live.has(k)` test in `Plane.sync` |
 | `EscapeClearsSearchFirst` | add `[Clutter.KEY_Escape]` to `NAV` |
 | `ActiveOnPlane` | drop `k === snap.active ||` from the live set in `Plane.sync` |
-| `FarClickFocuses` (F2) | delete `if (!this.reach().has(tile)) return 'ignored';` from `click`: `FIXED?` |
-| `ActiveWorkspaceMoves` (F3) | drop `key === this._active ||` from `planDrag`: `FIXED?` |
+| `ActiveWindowClickLeaves` | `picked` in `PlaneView._init` only calls `this.kick()` |
+| `ActiveSearchPickWins` | the same edit, run with `--only ActiveSearchPickWins` |
+| `ActiveWorkspaceMoves` | put back `key === this._active ||` in `planDrag` |

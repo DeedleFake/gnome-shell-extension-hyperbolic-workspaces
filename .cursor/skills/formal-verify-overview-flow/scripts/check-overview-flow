@@ -14,10 +14,10 @@ RULES=(TypeOK ActiveOnPlane OneEmptyWorkspace OpeningFocusesActive ClosingEnters
   NearClickFocuses CutoffNeighborClickFocuses ArrowMovesToNeighbor PageKeysActivateSetting
   PageKeysFollowGnomeOrder ModifiedKeysIgnored WindowDrops WorkspaceMoves DropOutsideCancels
   RimReturnsToGroup PanReleaseFocusesNearest EmptyHopKeepsWorkspace
-  EscapeClearsSearchFirst)
+  EscapeClearsSearchFirst ActiveWindowClickLeaves ActiveSearchPickWins FarClickFocuses ActiveWorkspaceMoves)
 # RULE:FINDING. Decided rules that master breaks (SKILL.md, Findings). Each is checked alone and
 # must still break; when one holds, the code changed, so confirm the fix and move it to RULES.
-KNOWN=(ActiveWindowClickLeaves:F1 ActiveSearchPickWins:F1 FarClickFocuses:F2 ActiveWorkspaceMoves:F3)
+KNOWN=()
 # Rules about one state (TLC INVARIANT). The rest are about one step (TLC PROPERTY).
 STATE_RULES=(TypeOK ActiveOnPlane OneEmptyWorkspace)
 # RULE:CALL. Rules waiting on an open design call. None today: O6 is out of the model's scope.
@@ -163,7 +163,7 @@ else
   report decided "$(run decided "${RULES[@]}")"
 fi
 if [[ $MODE != only ]]; then
-  for entry in "${KNOWN[@]}"; do
+  for entry in ${KNOWN[@]+"${KNOWN[@]}"}; do
     rule=${entry%%:*} id=${entry#*:}
     r=$(run "$rule" "$rule")
     case $r in
