@@ -85,6 +85,11 @@ class PlaneView extends St.Widget {
             this.kick();
         }, this);
         config.view.focusKey(this._activated);
+        // Activating a window (a preview click or a search result) raises it. On the active workspace GNOME
+        // switches nothing, so this is how the focus follows the pick there and the close enters its workspace.
+        const picked = w => { config.view.focusKey(w.get_workspace()); this.kick(); };
+        for (const a of global.get_window_actors()) a.meta_window.connectObject('raised', picked, this);
+        global.display.connectObject('window-created', (_d, w) => w.connectObject('raised', picked, this), this);
         this._followed = null;
         config.overviewAdjustment.connectObject('notify::value', () => this._syncState(), this);
         this.connect('notify::mapped', () => { if (this.mapped) { this.grab_key_focus(); this.kick(); } });

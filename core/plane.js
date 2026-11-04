@@ -30,8 +30,6 @@ export class Plane {
         this._state = G.emptyState(this._T.origin);
         /** Seated keys in GNOME order, rebuilt by every commit. @type {K[]} */
         this._seated = [];
-        /** @type {K|null} */
-        this._active = null;
         /** @type {Map<K, TileId>} one-shot landing hints from reserve() */
         this._hints = new Map();
         /** @type {Set<() => Iterable<[TileId, number]>>} */
@@ -48,7 +46,6 @@ export class Plane {
      * @returns {Change<K>}
      */
     sync(snap, screenDown) {
-        this._active = snap.active;
         const live = new Set(snap.order.filter(k => k === snap.active || snap.hasWindows(k)));
         const keyOf = this._keyMap();
         const log = [];
@@ -82,13 +79,13 @@ export class Plane {
 
     /**
      * Modifier-drag of a whole workspace. Returns the would-be Change without committing,
-     * so hover previews and the final drop are the same computation. Refuses (empty plan) for the active key.
+     * so hover previews and the final drop are the same computation. The active key moves like any other.
      * @param {K} key @param {TileId} tile @param {TileId} from  entry neighbor the drag crossed (insert direction)
      * @returns {{change: Change<K>, commit: () => Change<K>}}
      */
     planDrag(key, tile, from) {
         const id = this._idOf.get(key);
-        if (key === this._active || !this._seats.has(key) || !this._T.tiles[tile]) {
+        if (!this._seats.has(key) || !this._T.tiles[tile]) {
             const none = {...EMPTY, center: this.center};
             return {change: none, commit: () => none};
         }

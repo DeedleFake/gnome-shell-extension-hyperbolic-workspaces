@@ -50,6 +50,7 @@ A `state` other than 1 or a non-empty `error` means the extension failed to load
 | `hw probe-plane` | `{focusTile, focus, active, size, tiles}`: which tile is focused and which windows each tile holds |
 | `hw preview-center TITLE` | stage `X Y` of a window preview's center, for `click` and `drag` |
 | `hw probe-clicks` | `{size, clickable, blocked}`: picks each visible window preview's center and reports which previews would take a click |
+| `hw far-tile-point` | `TILE X Y` of a tile outside reach where a click reaches the plane, one with a workspace if any |
 | `hw empty-tile-point` | stage `X Y` on an empty reachable tile where a click reaches the plane, the focused tile when it is empty, else `none` |
 | `hw eval 'JS'` | `org.gnome.Shell.Eval`; `Main` and `global` are globals, `imports.gi` works, `import` does not |
 | `hw gget KEY`, `hw gset get\|set\|reset SCHEMA KEY [V]` | GSettings, read as a second view of what the UI wrote |
@@ -65,6 +66,7 @@ Prefer user input (`key`, `click`, `drag`, AT-SPI actions) over `eval` that call
 - `scripts/prove-close-enters.sh`: every way the Overview closes enters the focused workspace.
 - `scripts/prove-empty-hop.sh`: leaving an empty workspace for a blank tile keeps one empty workspace.
 - `scripts/prove-preview-click.sh`: a real click, or Return, on a neighbor's or the focused workspace's preview closes the Overview with that window focused. From size 1.8 up, a neighbor's preview changes nothing.
+- `scripts/prove-picks-and-reach.sh`: a window click or a search pick on the workspace you are on wins over a focus on another tile, a click outside reach focuses that tile and a drag there pans, and a move-modifier drag moves the active workspace with the group still connected.
 - `scripts/prove-no-gc-criticals.sh`: entering an empty tile leaves no `Gjs-CRITICAL` in the log, even after a full GC.
 
 Each one changes the scene, so run `hw down`, `hw up` and `hw scene` before the next.
