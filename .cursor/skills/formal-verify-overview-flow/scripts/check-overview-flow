@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# Model-checks model/OverviewFlow.tla with TLC. Each model CONSTANT is a code fact read from the
+# extension's source on every run, so a change that drops a guarded step turns its constant FALSE
+# and the check shows which rule breaks.
+#   check-overview-flow             the decided rules (exit 1 if one breaks)
+#   check-overview-flow --pending   also the rules waiting on a design call (O1, O2); never fails the run
+#   check-overview-flow --only RULE one rule alone
+set -euo pipefail
+
+TLA_VERSION=1.7.4
+TLA_SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
+
+RULES=(TypeOK ActiveOnPlane OneEmptyWorkspace OpeningFocusesActive ClosingEntersFocused SearchPickWins WindowClickLeaves
+  NearClickFocuses CutoffNeighborClickFocuses ArrowMovesToNeighbor PageKeysActivateSetting
+  PageKeysFollowOrder ModifiedKeysIgnored WindowDrops WorkspaceMoves DropOutsideCancels
+  ActiveStaysPut RimReturnsToGroup PanReleaseFocusesNearest EmptyHopKeepsWorkspace
+  EscapeClearsSearchFirst)
+# RULE:FINDING. Decided rules that master breaks (SKILL.md, Findings). Each is checked alone and
+# must still break; when one holds, the code changed, so confirm the fix and move it to RULES.
+KNOWN=(ActiveWindowClickLeaves:F1 ActiveSearchPickWins:F1)
+# Rules about one state (TLC INVARIANT). The rest are about one step (TLC PROPERTY).
+STATE_RULES=(TypeOK ActiveOnPlane OneEmptyWorkspace)
+# RULE:CALL. Decided rules that master breaks while the user decides the open call.
+PENDING=(FarClickFocuses:O1 PageKeysOnlyWindowed:O2 HomeEndOnlyWindowed:O2)
+
+MODE=decided ONLY=
+case ${1:-} in
+  --pending) MODE=pending ;;
+  --only) MODE=only ONLY=${2:?usage: check-overview-flow --only RULE} ;;
+  "") ;;
+  *) echo "usage: check-overview-flow [--pending | --only RULE]" >&2; exit 2 ;;
+esac
+
+ROOT=$(git rev-parse --show-toplevel)
+SKILL_DIR="$ROOT/.cursor/skills/formal-verify-overview-flow"
+OUT="$SKILL_DIR/out"
+die() { echo "error: $*" >&2; exit 2; }
+command -v java >/dev/null || die "java not found. Install a JDK 11 or newer (for example: mise exec java@temurin-21 -- $0)."
+command -v perl >/dev/null || die "perl not found."
+
+JAR=${TLA2TOOLS_JAR:-"${XDG_CACHE_HOME:-$HOME/.cache}/hyperbolic-workspaces/tla2tools-$TLA_VERSION.jar"}
+if [[ ! -f "$JAR" ]]; then
+  mkdir -p "$(dirname "$JAR")"
+  echo "downloading tla2tools.jar $TLA_VERSION to $JAR"
+  curl -fsSL -o "$JAR.part" "https://github.com/tlaplus/tlaplus/releases/download/v$TLA_VERSION/tla2tools.jar"
+  mv "$JAR.part" "$JAR"
+fi
+if command -v sha256sum >/dev/null; then sum=$(sha256sum "$JAR" | cut -d' ' -f1); else sum=$(shasum -a 256 "$JAR" | cut -d' ' -f1); fi
+[[ $sum == "$TLA_SHA256" ]] || die "$JAR has sha256 $sum, expected $TLA_SHA256. Delete it and rerun."
+
+# has FILE TEXT...: TRUE when the TEXTs appear in FILE in order, each within the same method as the
+# one before. Whitespace in TEXT matches any whitespace.
+has() {
+  local file=$1; shift
+  FILE="$ROOT/$file" perl -0777 -e '
+    open my $f, "<", $ENV{FILE} or exit 2; local $/; my $src = <$f>;
+    my @parts = map { my $q = quotemeta($_); $q =~ s/(?:\\\s)+/\\s*/g; $q } @ARGV;
+    my $re = join q{(?:(?!\n {0,4}\}).)*?}, @parts;
+    exit($src =~ /$re/s ? 0 : 1)' "$@" && echo TRUE || echo FALSE
+}
+any() { local v; for v in "$@"; do [[ $v == TRUE ]] && { echo TRUE; return; }; done; echo FALSE; }
+all() { local v; for v in "$@"; do [[ $v == TRUE ]] || { echo FALSE; return; }; done; echo TRUE; }
+not() { [[ $1 == TRUE ]] && echo FALSE || echo TRUE; }
+
+PV=shell/planeView.js VJ=core/view.js
+FACTS=()
+fact() { FACTS+=("$1"); printf -v "FACT_$1" %s "$2"; }
+fact OpenFocusKey "$(has $PV "}, this);
+        config.view.focusKey(this._activated);")"
+fact SwitchUpdatesActivated "$(has $PV "connectObject('active-workspace-changed', wm => {" "this._activated = wm.get_active_workspace();")"
+fact SwitchMovesFocus "$(has $PV "connectObject('active-workspace-changed', wm => {" "config.view.focusKey(this._activated);" "}, this);")"
+fact CloseGuard "$(has $PV "prepareToLeaveOverview() {" "if (global.workspace_manager.get_active_workspace() === this._activated) {")"
+fact CloseEntersFocus "$(has $PV "prepareToLeaveOverview() {" "const ws = f.kind === 'ws' ? f.key : this._workspaceOn(f.tile);" "if (ws !== this._activated) this._activate(ws);")"
+fact ClickOnlyInReach "$(has $VJ "click(tile) {" "if (!this.reach().has(tile)) return 'ignored';")"
+fact FocusedClickEnters "$(all "$(has $VJ "click(tile) {" "if (tile === this._focusTile()) return 'enter';")" \
+  "$(has $PV "case 'click':" "if (view.click(i.tile) === 'enter') this._enter(i.tile);")" \
+  "$(has $PV "_enter(tile) {" "this._activate(this._workspaceOn(tile));" "this._cfg.hideOverview();")")"
+fact ClickFocuses "$(has $VJ "click(tile) {" "return 'enter';" "this._goTo(tile);" "return 'focus';")"
+fact CutoffLimitsWindows "$(all "$(has $PV "this._windowReach = d.size >= CLICK_CUTOFF ? new Set([this._focusTile()]) : this._reach;")" \
+  "$(has $PV "const live = this._carry?.key !== k && this._windowReach.has(plane.seatOf(k)?.tile);" "this._setReactive(ws, live);")" \
+  "$(has disk/fitted.js "export const CLICK_CUTOFF = 1.8;")")"
+fact PreviewAlwaysLeaves "$(all "$(has shell/overviewHook.js "class PlaneWorkspace extends Workspace.Workspace {" "_shouldLeaveOverview() { return true; }")" \
+  "$(has shell/overviewHook.js "WorkspaceClass: PlaneWorkspace,")")"
+fact PageKeysActivate "$(all "$(has $PV "const ACTIVATES = new Set(['pageUp', 'pageDown', 'home', 'end']);")" \
+  "$(has $PV "if (ACTIVATES.has(nav) && this._cfg.settings.pageKeysActivate && f.kind === 'ws')" "this._activate(f.key);")")"
+fact PageMath "$(has $VJ "const list = this._plane.seated();" "const i = this._focus.kind === 'ws' ? list.indexOf(this._focus.key) : -1;" \
+  "const j = nav === 'home' ? 0 : nav === 'end' ? list.length - 1
+                : i < 0 ? 0 : Math.max(0, Math.min(list.length - 1, i + (nav === 'pageDown' ? 1 : -1)));" \
+  "this._goTo(this._plane.seatOf(list[j]).tile);")"
+fact ModKeysIgnored "$(has $PV "if (!nav || event.get_state() & Clutter.ModifierType.MODIFIER_MASK & ~Clutter.ModifierType.LOCK_MASK & ~Clutter.ModifierType.MOD2_MASK)" "return Clutter.EVENT_PROPAGATE;")"
+fact ArrowGoesToNeighbor "$(has $VJ "if (e < err) { err = e; best = nb[k]; }" "this._goTo(best);")"
+fact DropOnlyInReach "$(has $PV "_dropTile(source, x, y) {" "if (tile === null || tile === undefined || !this._reach.has(tile)) return null;")"
+fact WorkspaceDrops "$(has $PV "case 'drop':" "view.drop((c.plan ?? plane.planDrag(i.key, i.tile, i.from)).commit());")"
+fact CarryOutsideCancels "$(any "$(has core/gesture.js "return ph.hover === null ? [{kind: 'cancelCarry'}]")" \
+  "$(has core/plane.js "planDrag(key, tile, from) {" "!this._T.tiles[tile]) {")")"
+fact ActiveRefused "$(has core/plane.js "planDrag(key, tile, from) {" "if (key === this._active ||")"
+fact RimToCenter "$(all "$(has $VJ "recenter() { this._goTo(this._plane.center, true); }")" "$(has $PV "case 'rim': view.recenter(); break;")")"
+fact PanEndRefocus "$(all "$(has $VJ "panEnd() {" "this._rebase();" "this._goTo(this._view.root);")" "$(has $PV "case 'panEnd': view.panEnd(); break;")")"
+fact EmptyActiveMoves "$(has shell/windowMoves.js "openOn(tile) {" "const active = wm.get_active_workspace();" "if (active.n_windows === 0) {" "plane.reserve(active, tile);")"
+fact PlaneDropsEmpty "$(has core/plane.js "for (const k of this._seated) {" "if (live.has(k) && !moving.has(k)) continue;" "G.removeWorkspace(")"
+fact PlaneKeepsActive "$(has core/plane.js "const live = new Set(snap.order.filter(k => k === snap.active || snap.hasWindows(k)));")"
+fact EscapeIsGnomes "$(not "$(has $PV "Clutter.KEY_Escape")")"
+
+# Steps the model takes as given. Each must hold, or the model no longer describes the code.
+STALE=()
+assume() { [[ $2 == TRUE ]] || STALE+=("$1"); }
+assume "the plane opens per Overview open (PlaneView built in _updateWorkspacesViews)" "$(has shell/overviewHook.js "const view = hook._view = new PlaneView({")"
+assume "reach is the focused tile and its edge and corner neighbors" "$(has $VJ "reach() {" "const f = this._focusTile();" "this._T.frames(f, 2)")"
+assume "a plain press on a window preview stays GNOME's" "$(has $PV "if (kind === 'press' && previewOf(global.stage.get_event_actor(event), this) && !moveMod) return Clutter.EVENT_PROPAGATE;")"
+assume "a release without motion clicks the pressed tile" "$(has core/gesture.js "return ph.start.tile !== null ? [{kind: 'click', tile: ph.start.tile}] : [];")"
+assume "a modifier press on a workspace carries it" "$(has $PV "this._carry = at.key !== null && moveMod ?")"
+assume "a window drop on its own workspace is refused" "$(has $PV "if (this._cfg.plane.at(tile) === source.metaWindow.get_workspace()) return null;")"
+assume "unreactive previews and workspaces leave the press to the plane" "$(has $PV "_setReactive(ws, on) {" "ws.reactive = on;" "p.reactive = on;")"
+assume "seated() is GNOME order" "$(has core/plane.js "this._seated = order.filter(k => this._seats.has(k));")"
+assume "the plane keys are only the arrows, Page Up/Down, Home and End" "$(has $PV "const NAV = {" "[Clutter.KEY_End]: 'end',
+};")"
+
+echo "code facts (model constants):"
+for k in "${FACTS[@]}"; do v="FACT_$k"; printf '  %-24s %s\n' "$k" "${!v}"; done
+if (( ${#STALE[@]} )); then
+  echo "MODEL STALE: these steps no longer match the code, so a result would not describe it:"
+  printf '  %s\n' "${STALE[@]}"
+  exit 2
+fi
+
+rm -rf "$OUT" && mkdir -p "$OUT"
+cp "$SKILL_DIR/model/OverviewFlow.tla" "$OUT/"
+
+# run NAME RULES...: prints the first rule that breaks, "none", or "tool-error".
+run() {
+  local name=$1; shift
+  {
+    echo "SPECIFICATION Spec"
+    echo "CONSTANTS"
+    for k in "${FACTS[@]}"; do v="FACT_$k"; echo "  $k = ${!v}"; done
+    echo "VIEW StateView"
+    local r
+    for r in "$@"; do
+      if [[ " ${STATE_RULES[*]} " == *" $r "* ]]; then echo "INVARIANT $r"; else echo "PROPERTY $r"; fi
+    done
+  } >"$OUT/$name.cfg"
+  (cd "$OUT" && java -XX:+UseParallelGC -cp "$JAR" tlc2.TLC -config "$name.cfg" -workers "${TLC_WORKERS:-auto}" \
+    -metadir "$OUT/meta-$name" -nowarning OverviewFlow.tla) >"$OUT/$name.out" 2>&1 || true
+  if grep -q '^Model checking completed. No error has been found.' "$OUT/$name.out"; then echo none
+  elif v=$(grep -oE '^Error: (Invariant|Action property) [A-Za-z]+ is violated' "$OUT/$name.out" | awk '{print $(NF-2)}'); [[ -n $v ]]; then echo "$v"
+  else echo tool-error; fi
+}
+
+status=0 start=$SECONDS
+report() { # NAME RESULT
+  case $2 in
+    none) echo "PASS  $1" ;;
+    tool-error) echo "TOOL ERROR  $1, see $OUT/$1.out"; status=2 ;;
+    *) echo "FAIL  $2 (counterexample: $OUT/$1.out)"; [[ $status == 0 ]] && status=1 ;;
+  esac
+}
+if [[ $MODE == only ]]; then
+  report "$ONLY" "$(run "$ONLY" "$ONLY")"
+else
+  report decided "$(run decided "${RULES[@]}")"
+fi
+if [[ $MODE != only ]]; then
+  for entry in "${KNOWN[@]}"; do
+    rule=${entry%%:*} id=${entry#*:}
+    r=$(run "$rule" "$rule")
+    case $r in
+      "$rule") echo "KNOWN   $rule still breaks, finding $id (counterexample: $OUT/$rule.out)" ;;
+      none) echo "FIXED?  $rule now holds, finding $id. Confirm the fix in the container, then move it from KNOWN to RULES and update SKILL.md."; [[ $status == 0 ]] && status=1 ;;
+      *) echo "TOOL ERROR  $rule, see $OUT/$rule.out"; status=2 ;;
+    esac
+  done
+fi
+if [[ $MODE == pending ]]; then
+  for entry in "${PENDING[@]}"; do
+    rule=${entry%%:*} call=${entry#*:}
+    r=$(run "$rule" "$rule")
+    case $r in
+      "$rule") echo "BREAKS  $rule, pending design call $call (counterexample: $OUT/$rule.out)" ;;
+      none) echo "HOLDS   $rule, pending design call $call. The code changed: update the findings in SKILL.md." ;;
+      *) echo "TOOL ERROR  $rule, see $OUT/$rule.out"; status=2 ;;
+    esac
+  done
+fi
+echo "model checked in $((SECONDS - start))s"
+
+# Coverage drift: covered files changed since the sync commit in SKILL.md.
+sync=$(sed -n 's/^Sync commit: `\([0-9a-f]*\)`.*/\1/p' "$SKILL_DIR/SKILL.md")
+covered=$(sed -n 's/^- `\([^`]*\.js\)`:.*/\1/p' "$SKILL_DIR/SKILL.md" | sort -u)
+if [[ -n $sync ]] && git -C "$ROOT" cat-file -e "$sync^{commit}" 2>/dev/null; then
+  # shellcheck disable=SC2086
+  drift=$(cd "$ROOT" && git diff --name-only "$sync" -- $covered)
+  if [[ -n $drift ]]; then
+    echo "covered code changed since sync commit $sync, so recheck the model against it:"
+    echo "$drift" | sed 's/^/  /'
+  fi
+else
+  echo "warning: sync commit '$sync' from SKILL.md is not in this clone, so coverage drift is unchecked."
+fi
+exit $status
