@@ -64,7 +64,6 @@ TileOf(st, w) == CHOOSE t \in Tiles : st.seat[t] = w
 Free(st) == Pool \ Seated(st)
 Fresh(st) == CHOOSE n \in Free(st) : TRUE
 IndexOf(sq, w) == IF \E i \in 1..Len(sq) : sq[i] = w THEN CHOOSE i \in 1..Len(sq) : sq[i] = w ELSE 0
-Windowed(st) == SelectSeq(st.order, LAMBDA w : st.win[w] > 0)
 
 \* core/plane.js sync (one GLib idle later, folded into the step): a workspace stays only while it is
 \* active or has windows. The focus stays on the tile (core/view.js absorb).
@@ -279,13 +278,14 @@ PageKeysActivateSetting == [][last'.act \in PageActs =>
     /\ s'.ov = "open"
     /\ (pageAct => s'.active = s'.seat[s'.focus])
     /\ (~pageAct => s'.active = s.active)]_vars
-\* R11 and R12 where O2 does not apply: every workspace on the plane has windows.
-PageKeysFollowOrder == [][(last'.act \in PageActs /\ AllWindowed(s)) =>
+\* R11, R12 (O2): the page keys walk GNOME's own workspace order. An empty workspace you are on
+\* stays in that order until GNOME removes it, which the model folds into the step that leaves it.
+PageKeysFollowGnomeOrder == [][last'.act \in PageActs =>
     LET l == s.order
         i == IndexOf(l, s.seat[s.focus])
         want == CASE last'.act = "home" -> l[1]
                   [] last'.act = "end" -> l[Len(l)]
-                  [] i = 0 -> s'.seat[s'.focus]
+                  [] i = 0 -> l[1]
                   [] last'.act = "pageDown" -> l[IF i < Len(l) THEN i + 1 ELSE i]
                   [] OTHER -> l[IF i > 1 THEN i - 1 ELSE 1]
     IN s'.seat[s'.focus] = want]_vars
@@ -309,24 +309,20 @@ WorkspaceMoves == [][(last'.act = "movews" /\ last'.tile # Out /\ s.seat[last'.s
                          /\ s'.active = s.active /\ s'.ov = "open")]_vars
 \* R26 (code only)
 DropOutsideCancels == [][(last'.act = "movews" /\ last'.tile = Out) => s' = s]_vars
-\* R27 (code only, O4)
-ActiveStaysPut == [][(last'.act = "movews" /\ s.seat[last'.src] = s.active) => s' = s]_vars
+\* R27 (O4): a modifier-drag moves the active workspace like any other. Finding F3.
+ActiveWorkspaceMoves == [][(last'.act = "movews" /\ last'.tile # Out /\ s.seat[last'.src] = s.active)
+                           => (s'.seat[last'.tile] = s.active /\ s'.win = s.win
+                               /\ s'.active = s.active /\ s'.ov = "open")]_vars
 \* R28
 RimReturnsToGroup == [][last'.act = "rim" => s'.seat[s'.focus] # None]_vars
-\* R30 (code only, O5)
+\* R30 (O5)
 PanReleaseFocusesNearest == [][last'.act = "pan" => (s'.focus = last'.tile /\ Unmoved)]_vars
 \* R33
 EmptyHopKeepsWorkspace == [][(IsClose /\ s.seat[s.focus] = None /\ s.win[s.active] = 0) => s'.active = s.active]_vars
 \* R34
 EscapeClearsSearchFirst == [][(last'.act = "escape" /\ s.search) => (s'.ov = "open" /\ ~s'.search)]_vars
 
-\* ---- Pending design calls. Checked apart; master breaks both. ----
-\* R18, O1: a click farther out than reach focuses that tile.
+\* R18 (O1): a click farther out than reach focuses that tile. Finding F2.
 FarClickFocuses == [][(last'.act \in {"clicktile", "clickwindow"} /\ last'.tile \notin Reach(s.focus))
                       => (s'.focus = last'.tile /\ s'.ov = "open")]_vars
-\* R11, O2: the page keys visit only workspaces with windows.
-PageKeysOnlyWindowed == [][(last'.act \in PageActs /\ Len(Windowed(s)) > 0) => s.win[s'.seat[s'.focus]] > 0]_vars
-\* R12, O2: Home and End go to the first and last workspace with windows.
-HomeEndOnlyWindowed == [][(last'.act \in {"home", "end"} /\ Len(Windowed(s)) > 0) =>
-    s'.seat[s'.focus] = IF last'.act = "home" THEN Windowed(s)[1] ELSE Windowed(s)[Len(Windowed(s))]]_vars
 ====

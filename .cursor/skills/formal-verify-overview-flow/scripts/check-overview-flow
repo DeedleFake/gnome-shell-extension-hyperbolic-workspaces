@@ -3,7 +3,7 @@
 # extension's source on every run, so a change that drops a guarded step turns its constant FALSE
 # and the check shows which rule breaks.
 #   check-overview-flow             the decided rules (exit 1 if one breaks)
-#   check-overview-flow --pending   also the rules waiting on a design call (O1, O2); never fails the run
+#   check-overview-flow --pending   also the rules waiting on a design call (none today); never fails the run
 #   check-overview-flow --only RULE one rule alone
 set -euo pipefail
 
@@ -12,16 +12,16 @@ TLA_SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
 
 RULES=(TypeOK ActiveOnPlane OneEmptyWorkspace OpeningFocusesActive ClosingEntersFocused SearchPickWins WindowClickLeaves
   NearClickFocuses CutoffNeighborClickFocuses ArrowMovesToNeighbor PageKeysActivateSetting
-  PageKeysFollowOrder ModifiedKeysIgnored WindowDrops WorkspaceMoves DropOutsideCancels
-  ActiveStaysPut RimReturnsToGroup PanReleaseFocusesNearest EmptyHopKeepsWorkspace
+  PageKeysFollowGnomeOrder ModifiedKeysIgnored WindowDrops WorkspaceMoves DropOutsideCancels
+  RimReturnsToGroup PanReleaseFocusesNearest EmptyHopKeepsWorkspace
   EscapeClearsSearchFirst)
 # RULE:FINDING. Decided rules that master breaks (SKILL.md, Findings). Each is checked alone and
 # must still break; when one holds, the code changed, so confirm the fix and move it to RULES.
-KNOWN=(ActiveWindowClickLeaves:F1 ActiveSearchPickWins:F1)
+KNOWN=(ActiveWindowClickLeaves:F1 ActiveSearchPickWins:F1 FarClickFocuses:F2 ActiveWorkspaceMoves:F3)
 # Rules about one state (TLC INVARIANT). The rest are about one step (TLC PROPERTY).
 STATE_RULES=(TypeOK ActiveOnPlane OneEmptyWorkspace)
-# RULE:CALL. Decided rules that master breaks while the user decides the open call.
-PENDING=(FarClickFocuses:O1 PageKeysOnlyWindowed:O2 HomeEndOnlyWindowed:O2)
+# RULE:CALL. Rules waiting on an open design call. None today: O6 is out of the model's scope.
+PENDING=()
 
 MODE=decided ONLY=
 case ${1:-} in
@@ -171,7 +171,7 @@ if [[ $MODE != only ]]; then
   done
 fi
 if [[ $MODE == pending ]]; then
-  for entry in "${PENDING[@]}"; do
+  for entry in ${PENDING[@]+"${PENDING[@]}"}; do
     rule=${entry%%:*} call=${entry#*:}
     r=$(run "$rule" "$rule")
     case $r in
