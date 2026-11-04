@@ -27,9 +27,9 @@ Each feature file has an H1 title and a paragraph describing the behavior, then 
 
 ## Features
 
-- [Overview plane and panning](./overview-plane.md) covers the disk replacing GNOME's workspace strip, and drag-to-pan.
-- [Focus and keys](./focus-keys.md) covers arrow, PgUp/PgDn and Home focus movement and the shortcuts GNOME keeps.
-- [Workspace move with modifier](./workspace-move.md) covers modifier-drag to move a workspace and insert-by-direction.
+- [Overview plane and panning](./overview-plane.md) covers the disk replacing GNOME's workspace strip, drag-to-pan, the rim arrow, and the layout kept across disable.
+- [Focus and keys](./focus-keys.md) covers arrow, PgUp/PgDn, Home and End focus movement and the shortcuts GNOME keeps.
+- [Workspace move with modifier](./workspace-move.md) covers modifier-drag to move a workspace, insert-by-direction, and dragging a window to another tile.
 - [Entering a workspace](./enter-workspace.md) covers clicking a tile or a window preview to leave the Overview there.
 - [Focused tile size and click cutoff](./focused-tile-size.md) covers how the setting changes the drawing and which windows take clicks.
-- [Preferences page](./preferences.md) covers the slider, keyboard and AT-SPI entry, and reset. Proven end to end by `scripts/prove-prefs.sh`.
+- [Preferences page](./preferences.md) covers the slider, keyboard and AT-SPI entry, reset, and the keys and dragging group. Proven end to end by `scripts/prove-prefs.sh`.
