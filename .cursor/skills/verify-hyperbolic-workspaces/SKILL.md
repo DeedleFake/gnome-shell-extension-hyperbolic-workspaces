@@ -64,6 +64,7 @@ Prefer user input (`key`, `click`, `drag`, AT-SPI actions) over `eval` that call
 
 - `scripts/prove-close-enters.sh`: every way the Overview closes enters the focused workspace.
 - `scripts/prove-empty-hop.sh`: leaving an empty workspace for a blank tile keeps one empty workspace.
+- `scripts/prove-preview-click.sh`: a real click, or Return, on a neighbor's or the focused workspace's preview closes the Overview with that window focused. From size 1.8 up, a neighbor's preview changes nothing.
 - `scripts/prove-no-gc-criticals.sh`: entering an empty tile leaves no `Gjs-CRITICAL` in the log, even after a full GC.
 
 Each one changes the scene, so run `hw down`, `hw up` and `hw scene` before the next.

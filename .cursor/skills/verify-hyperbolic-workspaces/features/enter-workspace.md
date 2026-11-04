@@ -22,6 +22,7 @@ Preconditions:
 - Baseline from the README, with `hw overview show`.
 
 - **Window click.** Run `hw click $(hw preview-center Alpha | tr -dc '0-9 ')`. `hw eval Main.overview.visible` reads `false`, and `hw workspaces` shows the active index of Alpha's workspace. In this container `global.display.focus_window` read `undefined` right after the click, so prove the switch with `hw workspaces`, not the focus window.
+- **Neighbor window click.** The same holds for a preview on any workspace touching the focused one, corners included. `hw probe-clicks` lists the previews that take clicks. Clicking one closes the Overview on that window's workspace, not only switches to it. Stock GNOME only switches there, so this is the plane's own behavior. `scripts/prove-preview-click.sh` covers it.
 - **Focus then enter.** Reopen the Overview. Click on Beta's tile outside its preview, in tile border space. `hw probe-plane` focus becomes Beta, and the Overview stays open. Click the same point again. The Overview closes, and the active workspace holds Beta.
 - **Proof.** Capture `hw shot` before each click and after it.
 
