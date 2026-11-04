@@ -60,7 +60,13 @@ A `state` other than 1 or a non-empty `error` means the extension failed to load
 
 Prefer user input (`key`, `click`, `drag`, AT-SPI actions) over `eval` that calls extension internals. Use `eval` to read state, not to cause it.
 
-`scripts/prove-prefs.sh` is the full preferences journey and the model for writing others. It asserts each step and logs it. `scripts/prove-monitors.sh` checks that a second monitor and the plane agree when `workspaces-only-on-primary` is false.
+`scripts/prove-prefs.sh` is the full preferences journey and the model for writing others. It asserts each step and logs it. `scripts/prove-monitors.sh` checks that a second monitor and the plane agree when `workspaces-only-on-primary` is false. These run after `hw up` and `hw scene` and print `PASS` at the end:
+
+- `scripts/prove-close-enters.sh`: every way the Overview closes enters the focused workspace.
+- `scripts/prove-empty-hop.sh`: leaving an empty workspace for a blank tile keeps one empty workspace.
+- `scripts/prove-no-gc-criticals.sh`: entering an empty tile leaves no `Gjs-CRITICAL` in the log, even after a full GC.
+
+Each one changes the scene, so run `hw down`, `hw up` and `hw scene` before the next.
 
 ## Evidence
 
