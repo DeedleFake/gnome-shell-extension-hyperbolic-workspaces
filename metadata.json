@@ -1,5 +1,5 @@
 {
-  "uuid": "hyperbolic-workspaces@deedlefake.github.io",
+  "uuid": "hyperbolic-workspaces@deedles.dev",
   "name": "Hyperbolic Workspaces",
   "description": "Lays out workspaces on a {4,5} hyperbolic plane in the Overview.",
   "shell-version": ["51"],
