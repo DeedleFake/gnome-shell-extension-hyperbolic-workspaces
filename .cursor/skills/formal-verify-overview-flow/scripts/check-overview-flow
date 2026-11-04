@@ -69,6 +69,9 @@ fact OpenFocusKey "$(has $PV "}, this);
         config.view.focusKey(this._activated);")"
 fact SwitchUpdatesActivated "$(has $PV "connectObject('active-workspace-changed', wm => {" "this._activated = wm.get_active_workspace();")"
 fact SwitchMovesFocus "$(has $PV "connectObject('active-workspace-changed', wm => {" "config.view.focusKey(this._activated);" "}, this);")"
+fact RaiseMovesFocus "$(has $PV "const picked = w => { config.view.focusKey(w.get_workspace()); this.kick(); };" \
+  "for (const a of global.get_window_actors()) a.meta_window.connectObject('raised', picked, this);" \
+  "global.display.connectObject('window-created', (_d, w) => w.connectObject('raised', picked, this), this);")"
 fact CloseGuard "$(has $PV "prepareToLeaveOverview() {" "if (global.workspace_manager.get_active_workspace() === this._activated) {")"
 fact CloseEntersFocus "$(has $PV "prepareToLeaveOverview() {" "const ws = f.kind === 'ws' ? f.key : this._workspaceOn(f.tile);" "if (ws !== this._activated) this._activate(ws);")"
 fact ClickOnlyInReach "$(has $VJ "click(tile) {" "if (!this.reach().has(tile)) return 'ignored';")"

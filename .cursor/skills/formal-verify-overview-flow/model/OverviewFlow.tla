@@ -9,6 +9,7 @@ CONSTANTS
     OpenFocusKey,           \* shell/planeView.js _init: focusKey(this._activated)
     SwitchUpdatesActivated, \* shell/planeView.js active-workspace-changed: this._activated = ...
     SwitchMovesFocus,       \* shell/planeView.js active-workspace-changed: focusKey(this._activated)
+    RaiseMovesFocus,        \* shell/planeView.js a window's 'raised': focusKey(its workspace)
     CloseGuard,             \* shell/planeView.js prepareToLeaveOverview: active === this._activated
     CloseEntersFocus,       \* shell/planeView.js prepareToLeaveOverview: this._activate(ws)
     ClickOnlyInReach,       \* core/view.js click: !this.reach().has(tile) -> 'ignored'
@@ -80,6 +81,9 @@ Switch(st, w) ==
                     !.activated = IF SwitchUpdatesActivated THEN w ELSE st.activated,
                     !.focus = IF SwitchMovesFocus /\ w \in Seated(st) THEN TileOf(st, w) ELSE st.focus]
 
+\* GNOME raises a window it activates, whether or not it switched; planeView.js 'raised' handler.
+Raise(st, w) == IF RaiseMovesFocus /\ w \in Seated(st) THEN [st EXCEPT !.focus = TileOf(st, w)] ELSE st
+
 \* planeView.js _activate: remember the workspace, then GNOME switches.
 Activate(st, w) == Switch([st EXCEPT !.activated = w], w)
 
@@ -110,9 +114,9 @@ ClickTile(st, t) ==
     ELSE IF t = st.focus THEN (IF FocusedClickEnters /\ CanEnter(st, t) THEN Hide(EnterTile(st, t)) ELSE st)
     ELSE IF ClickFocuses THEN [st EXCEPT !.focus = t] ELSE st
 
-\* GNOME's WindowPreview click: Main.activateWindow switches, then leaves when _shouldLeaveOverview().
+\* GNOME's WindowPreview click: Main.activateWindow switches and raises, then leaves when _shouldLeaveOverview().
 WindowActivate(st, w) ==
-    LET st1 == Switch(st, w)
+    LET st1 == Raise(Switch(st, w), w)
     IN IF PreviewAlwaysLeaves \/ w = st.active THEN Hide(st1) ELSE Prune(st1)
 
 \* core/view.js nav for the page keys over plane.seated() (GNOME order of the seated workspaces).
@@ -188,7 +192,7 @@ YouPressEscape == s.ov = "open" /\
 YouCloseOtherwise == s.ov = "open" /\ Do("close", s.focus, None, Hide(s))
 
 YouPickSearchResult == s.ov = "open" /\ s.search /\ \E w \in Seated(s) : s.win[w] > 0 /\
-    Do("searchpick", TileOf(s, w), None, Hide(Switch(s, w)))
+    Do("searchpick", TileOf(s, w), None, Hide(Raise(Switch(s, w), w)))
 
 \* A press and release without motion on a tile's empty space (core/gesture.js click).
 YouClickTile == Browsing /\ \E t \in Tiles :
