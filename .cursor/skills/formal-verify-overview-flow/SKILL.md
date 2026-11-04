@@ -13,7 +13,7 @@ The Overview on the primary monitor is a state machine. The user opens it, moves
 
 ```sh
 .cursor/skills/formal-verify-overview-flow/scripts/check-overview-flow            # decided rules and known findings
-.cursor/skills/formal-verify-overview-flow/scripts/check-overview-flow --pending  # also the rules waiting on design calls O1 and O2
+.cursor/skills/formal-verify-overview-flow/scripts/check-overview-flow --pending  # also any rules waiting on a design call (none today)
 .cursor/skills/formal-verify-overview-flow/scripts/check-overview-flow --only WindowDrops
 ```
 
@@ -27,58 +27,62 @@ Results:
 - `FAIL <Rule>`: a decided rule breaks. Exit 1. The counterexample is in `out/decided.out`.
 - `KNOWN <Rule>`: a rule in the Findings below still breaks, as expected.
 - `FIXED? <Rule>`: a known finding now holds. Exit 1 until you confirm the fix and update this file.
-- `BREAKS` or `HOLDS` (with `--pending`): a pending rule. These never fail the run.
+- `BREAKS` or `HOLDS` (with `--pending`): a rule waiting on a design call. These never fail the run. The list is empty today.
 - `covered code changed since sync commit`: see Keeping in step.
 
 Read every result with the `/statechart` skill. Give it `out/OverviewFlow.tla`, the `out/*.cfg` of the run, and `model/view.ts` as the view. It tells each counterexample as the shortest path of user steps in plain words. The model has more states than its chart budget, so it shows only the paths to the rules that break.
 
 ## Rules
 
-R numbers are the rule numbers of the design recall (`decided` means the user decided it, `code only` means only the code says so and the user has not decided it). A state rule is a TLC INVARIANT. A step rule is a PROPERTY `[][Step]_vars` that reads the state before and after the step.
+R numbers are the rule numbers of the design recall (`decided` means the user decided it, `code only` means only the code says so and the user has not decided it, `finding` means the user decided it and `master` breaks it). A state rule is a TLC INVARIANT. A step rule is a PROPERTY `[][Step]_vars` that reads the state before and after the step.
 
 | Rule | R | Kind | What must be true |
 | --- | --- | --- | --- |
 | `OpeningFocusesActive` | 1 | decided | Opening the Overview focuses the active workspace. |
 | `ClosingEntersFocused` | 2, 31, 32 | decided | Escape outside search, Super, any other close, or a click on the focused tile enters the focused tile, a blank one included. |
 | `SearchPickWins` | 3 | decided | Picking a search result on another workspace, or on the focused tile, leaves with that workspace active. |
-| `ActiveSearchPickWins` | 3 | decided | Same, for a result on the active workspace while the focus is on another tile. Finding F1. |
+| `ActiveSearchPickWins` | 3 | finding F1 | Same, for a result on the active workspace while the focus is on another tile. |
 | `WindowClickLeaves` | 17 | decided | A click on a window preview in reach leaves with its workspace active, when the window is on another workspace or on the focused tile. |
-| `ActiveWindowClickLeaves` | 17 | decided | Same, for a window on the active workspace while the focus is on another tile. Finding F1. |
+| `ActiveWindowClickLeaves` | 17 | finding F1 | Same, for a window on the active workspace while the focus is on another tile. |
 | `NearClickFocuses` | 4, 16 | decided | A click on a neighbor tile focuses it and changes nothing else. |
+| `FarClickFocuses` | 18 | finding F2 | A click on a tile farther out than reach, or on a window there, focuses that tile and does not leave. |
 | `CutoffNeighborClickFocuses` | 19 | decided | From size 1.8, a click on a neighbor's window focuses that tile and does not leave. |
 | `ArrowMovesToNeighbor` | 8 | decided | An arrow moves the focus to a neighbor and changes nothing else. |
 | `PageKeysActivateSetting` | 13 | decided | With `page-keys-activate` on, the page keys also switch workspace. Off, they only move focus. The Overview stays open. |
-| `PageKeysFollowOrder` | 11, 12 | decided | When every workspace has windows, Home and End go to the first and last in GNOME order, and Page Up and Down step through it. |
+| `PageKeysFollowGnomeOrder` | 11, 12 | decided | Home and End go to the first and last workspace in GNOME's order, and Page Up and Down step through it. An empty workspace you are on is in that order until GNOME removes it. |
 | `ModifiedKeysIgnored` | 15 | code only | A plane key with Ctrl, Alt, Shift or Super held changes nothing. |
 | `WindowDrops` | 21, 22 | decided | A window dragged inside reach and dropped on another reachable workspace joins it. On a blank reachable tile it opens a new workspace. Anywhere else nothing changes. A drag outside reach pans. |
 | `WorkspaceMoves` | 23, 24 | decided | A modifier-drag puts a workspace other than the active one on the tile it is dropped on. |
 | `DropOutsideCancels` | 26 | code only | A workspace dropped outside the disk changes nothing. |
-| `ActiveStaysPut` | 27 | code only (O4) | A modifier-drag of the active workspace changes nothing. |
+| `ActiveWorkspaceMoves` | 27 | finding F3 | A modifier-drag moves the active workspace to the tile it is dropped on, like any other workspace. |
 | `RimReturnsToGroup` | 28 | decided | The rim arrow focuses a workspace in the group. |
-| `PanReleaseFocusesNearest` | 30 | code only (O5) | Releasing a pan focuses the tile nearest the center and changes nothing else. |
+| `PanReleaseFocusesNearest` | 30 | decided | Releasing a pan focuses the tile nearest the center and changes nothing else. |
 | `EmptyHopKeepsWorkspace` | 33 | decided | Entering a blank tile from an empty active workspace moves that workspace there. |
 | `OneEmptyWorkspace` | 33 | decided | At most one workspace on the plane has no windows. |
 | `EscapeClearsSearchFirst` | 34 | decided | Escape in search clears the search and keeps the Overview open. |
 | `ActiveOnPlane` | none | invariant | The active workspace is always on the plane. |
 | `TypeOK` | none | invariant | Every variable has a value of the expected type. |
 
-### Pending design calls
+### Design calls
 
-These rules are written as the user decided them. Master breaks each one, and the user has not yet answered the open question about it, so `--pending` checks them apart and they never fail the run. Do not change them or the code until the user answers.
+The user answered O1 to O5 on 2026-11-04.
 
-| Rule | R | Call | Master |
-| --- | --- | --- | --- |
-| `FarClickFocuses` | 18 | O1: should a click on a tile farther out than reach focus it? | The click is ignored (`core/view.js` `click`). |
-| `PageKeysOnlyWindowed` | 11 | O2: should an empty workspace you are on be in the page-key order? | Page Up and Down visit it (`core/view.js` `nav` walks `plane.seated()`). |
-| `HomeEndOnlyWindowed` | 12 | O2, the same question for Home and End | Home goes to it when it is first in GNOME order. |
-
-O3 (the arrow-mode setting) has nothing to model, because no such setting exists. O6 (other monitors with "workspaces on primary display only" off) is out of scope.
+- O1. A far-tile click focuses the tile. Checked by `FarClickFocuses`, finding F2.
+- O2. The page keys follow GNOME's normal order, with no timing of their own. An empty workspace you are on stays in the order until GNOME removes it after its usual short delay. Checked by `PageKeysFollowGnomeOrder`, which `master` holds.
+- O3. The three-way arrow-key setting is dropped by the user. Nothing to model.
+- O4. The active workspace must be draggable like any other. Checked by `ActiveWorkspaceMoves`, finding F3.
+- O5. Releasing a pan focuses the tile nearest the center. Checked by `PanReleaseFocusesNearest`.
+- O6. Still open: what happens on other monitors with "workspaces on primary display only" off. Out of the model's scope until the user answers.
 
 ## Findings
 
-F1. Clicking a window, or picking a search result, on the active workspace while the focus is on another tile closes the Overview on the focused tile, not on the window's workspace. Rules 3 and 17 break. GNOME's `Main.activateWindow` switches workspace only when the window is on another one, so no `active-workspace-changed` fires, the focus does not follow, and `prepareToLeaveOverview` then enters the focused tile. When that tile is blank, it opens a new empty workspace there.
+F1. Clicking a window, or picking a search result, on the active workspace while the focus is on another tile closes the Overview on the focused tile, not on the window's workspace. Rules 3 and 17 break (`ActiveSearchPickWins`, `ActiveWindowClickLeaves`). GNOME's `Main.activateWindow` switches workspace only when the window is on another one, so no `active-workspace-changed` fires, the focus does not follow, and `prepareToLeaveOverview` then enters the focused tile. When that tile is blank, it opens a new empty workspace there.
 
 Shortest path in the model: open the Overview, press an arrow to a neighbor, drag that neighbor's only window onto the active workspace, click that window. Replayed against `1c5ef4e` in the container with a shorter path: switch to Alpha's workspace, open the Overview, press Right (the focus moves to a blank tile), click Alpha's preview. The Overview closed on a new empty workspace 4 and no window had focus. The search-result case follows the same code path and was not replayed.
+
+F2. A click on a tile farther out than reach does nothing. Rule 18 breaks (`FarClickFocuses`). `ViewState.click` returns `'ignored'` for any tile outside `reach()` (`core/view.js:226`). Shortest path in the model: open the Overview, press an arrow, click a tile two steps from the new focus. Not replayed in the container, because the guard is a plain early return.
+
+F3. A modifier-drag of the active workspace does nothing. Rule 27 breaks (`ActiveWorkspaceMoves`). `Plane.planDrag` returns an empty plan when `key === this._active` (`core/plane.js:91`). Shortest path in the model: open the Overview, modifier-drag the active workspace E onto A's tile. Not replayed in the container, for the same reason. The model's move is abstract, so removing the guard makes the rule hold in the model, but the real slide-back with the active workspace is unchecked (see Scope).
 
 ## Scope
 
@@ -87,8 +91,8 @@ Verified: every order of the steps above, from the `hw scene` start (an empty ac
 The model abstracts these, so a pass says nothing about them:
 
 - Geometry. Six tiles in a row stand for the {4,5} tiling, and reach is a tile and its two neighbors. The real reach is the tile plus edge and corner neighbors (13 tiles). Which neighbor an arrow picks, which tile a pan ends on, and the group's center are free choices in the model.
-- Workspace moves. The dropped workspace takes the tile, and whatever was there takes its old tile. The real insert, slide-back and "no holes" rules (24, 25, 38) are `test/plane.test.js`'s job. The hover preview (25) is not modeled.
-- The `Plane.sync` that GNOME's signals trigger runs in a GLib idle. The model folds it into the step that caused it.
+- Workspace moves. The dropped workspace takes the tile, the active one included, and whatever was there takes its old tile. The real insert, slide-back and "no holes" rules (24, 25, 38) are `test/plane.test.js`'s job. The hover preview (25) is not modeled.
+- The `Plane.sync` that GNOME's signals trigger runs in a GLib idle, and GNOME removes an empty workspace after a short delay. The model folds both into the step that caused them, so the page keys see the order GNOME has at that moment.
 - Windows only move by drag. Opening or closing windows, other monitors (35, 36), touch, the preferences window (37), drawing (29), Tab and Return on previews (20), and the stock GNOME keys (5, 7) are left out.
 - GNOME's own code (`Main.activateWindow`, the Escape order in search, dynamic workspaces) is modeled from GNOME 51.1's behavior, not read on each run.
 
@@ -117,14 +121,15 @@ When a decided rule fails:
 
 - An intended behavior change: change the step in the model, then the fact regex in the script if the code text changed, and the rule only if the user changed the design. Show the new rule failing on a scratch break before you commit.
 - A `MODEL STALE` line: the code text a step depends on moved or changed. Read the new code, and update the regex or the model step.
-- A rule that the user decides (O1, O2, or a code-only rule): move it to the decided list and update the tables.
+- A rule that the user decides (O6, or a code-only rule): move it to the decided list or to KNOWN in the script, and update the tables.
+- A `FIXED?` line: confirm the fix in the container, then move the rule from KNOWN to RULES in the script and from Findings to decided here.
 - Move the sync commit forward only after you confirm that the model describes the code at the new commit.
 
 For a full pass after changes that did not recheck this, use `/maintain-formal-verification-skill`.
 
 ## Proof that the check can fail
 
-Each decided rule was seen to fail on a scratch edit of the real code, which was then reverted. `TypeOK` has no code to break.
+Each decided rule was seen to fail on a scratch edit of the real code, which was then reverted. `TypeOK` has no code to break. Each known finding was seen to turn `FIXED?` when its guard was removed.
 
 | Rule | Scratch edit |
 | --- | --- |
@@ -133,18 +138,20 @@ Each decided rule was seen to fail on a scratch edit of the real code, which was
 | `SearchPickWins` | delete `focusKey` from the `active-workspace-changed` handler |
 | `WindowClickLeaves` | `PlaneWorkspace._shouldLeaveOverview` returns `false` |
 | `NearClickFocuses` | delete `this._goTo(tile);` from `ViewState.click` |
+| `FarClickFocuses` | 18 | finding F2 | A click on a tile farther out than reach, or on a window there, focuses that tile and does not leave. |
 | `CutoffNeighborClickFocuses` | compare `d.size >= 99` for the window reach |
 | `ArrowMovesToNeighbor` | `this._goTo(from);` at the end of `nav` |
 | `PageKeysActivateSetting` | `&& false` in place of `&& f.kind === 'ws'` in `handleKey` |
-| `PageKeysFollowOrder` | swap the `pageDown` step sign in `nav` |
+| `PageKeysFollowGnomeOrder` | swap the `pageDown` step sign in `nav` |
 | `ModifiedKeysIgnored` | `if (!nav)` in `handleKey` |
 | `WindowDrops` | drop `|| !this._reach.has(tile)` in `_dropTile` |
 | `WorkspaceMoves` | remove the `view.drop(...)` call in `_apply` |
 | `DropOutsideCancels` | both guards: `ph.hover === undefined` in `GestureMachine.handle` and no `!this._T.tiles[tile]` in `planDrag` |
-| `ActiveStaysPut` | `if (false ||` in `planDrag` |
 | `RimReturnsToGroup` | `recenter` goes to `this._view.root` |
 | `PanReleaseFocusesNearest` | delete `this._goTo(this._view.root);` from `panEnd` |
 | `EmptyHopKeepsWorkspace` | `if (false) {` in `openOn` |
 | `OneEmptyWorkspace` | `continue;` without the `live.has(k)` test in `Plane.sync` |
 | `EscapeClearsSearchFirst` | add `[Clutter.KEY_Escape]` to `NAV` |
 | `ActiveOnPlane` | drop `k === snap.active ||` from the live set in `Plane.sync` |
+| `FarClickFocuses` (F2) | delete `if (!this.reach().has(tile)) return 'ignored';` from `click`: `FIXED?` |
+| `ActiveWorkspaceMoves` (F3) | drop `key === this._active ||` from `planDrag`: `FIXED?` |
