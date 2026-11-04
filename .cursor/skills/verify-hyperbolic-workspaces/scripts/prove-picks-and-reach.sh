@@ -24,7 +24,7 @@ check_left() { # check_left LABEL WORKSPACE_TITLES WINDOW
     [ "$a" = "$2" ] || fail "$1 left the active workspace on '$a', want '$2'"
     [ "$f" = "$3" ] || fail "$1 focused '$f', want $3"
 }
-connected() { "$hw" eval '(() => { const all = []; const w = a => { all.push(a); a.get_children().forEach(w); }; w(global.stage); const v = all.find(a => a.constructor.name.includes("Plane") && a._disk); const p = v._cfg.plane, T = p.tiling; const occ = new Set(p.seated().map(k => p.seatOf(k).tile)); const [t0] = occ; const seen = new Set([t0]), q = [t0]; while (q.length) for (const n of T.neighbors(q.pop())) if (occ.has(n) && !seen.has(n)) { seen.add(n); q.push(n); } return seen.size === occ.size && occ.has(p.center) ? "connected" : "split"; })()' | tr -dc 'a-z'; }
+connected() { "$hw" eval '(() => { const all = []; const w = a => { all.push(a); a.get_children().forEach(w); }; w(global.stage); const v = all.find(a => a.constructor.name.includes("Plane") && a._disk); const p = v._cfg.plane, T = p.tiling; const occ = new Set(p.seated().map(k => p.seatOf(k).tile)); const [t0] = occ; const seen = new Set([t0]), q = [t0]; while (q.length) for (const n of T.neighbors(q.pop())) if (occ.has(n) && !seen.has(n)) { seen.add(n); q.push(n); } return seen.size === occ.size && occ.has(p.center) ? "connected" : "split"; })()' | tr -dc 'a-z' | sed 's/^true//'; }
 
 start Alpha
 away Alpha
