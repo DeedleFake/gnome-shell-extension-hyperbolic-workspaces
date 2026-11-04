@@ -6,20 +6,20 @@ The extension is in progress. The [web demo](https://deedlefake.github.io/gnome-
 
 ## Install
 
-The extension supports GNOME Shell 51 only. Install it from source. The repository is the extension directory, so you can clone it straight into place. The directory name must be the extension's UUID, `hyperbolic-workspaces@deedlefake.github.io`.
+The extension supports GNOME Shell 51 only. Install it from source. The repository is the extension directory, so you can clone it straight into place. The directory name must be the extension's UUID, `hyperbolic-workspaces@deedles.dev`.
 
 1. Clone the repository into your extensions directory:
 
    ```sh
    mkdir -p ~/.local/share/gnome-shell/extensions
-   git clone https://github.com/DeedleFake/gnome-shell-extension-hyperbolic-workspaces.git ~/.local/share/gnome-shell/extensions/hyperbolic-workspaces@deedlefake.github.io
+   git clone https://github.com/DeedleFake/gnome-shell-extension-hyperbolic-workspaces.git ~/.local/share/gnome-shell/extensions/hyperbolic-workspaces@deedles.dev
    ```
 
    If you already have a checkout somewhere else, link it into place instead. Run this from the checkout:
 
    ```sh
    mkdir -p ~/.local/share/gnome-shell/extensions
-   ln -sfn "$PWD" ~/.local/share/gnome-shell/extensions/hyperbolic-workspaces@deedlefake.github.io
+   ln -sfn "$PWD" ~/.local/share/gnome-shell/extensions/hyperbolic-workspaces@deedles.dev
    ```
 
    The repository includes the compiled settings schema, so no compile step is needed. GNOME Shell loads only `metadata.json`, the modules, and `schemas/` from the directory. It ignores the tests, tools and other files.
@@ -29,13 +29,13 @@ The extension supports GNOME Shell 51 only. Install it from source. The reposito
 3. Enable the extension:
 
    ```sh
-   gnome-extensions enable hyperbolic-workspaces@deedlefake.github.io
+   gnome-extensions enable hyperbolic-workspaces@deedles.dev
    ```
 
 4. Check that it loaded:
 
    ```sh
-   gnome-extensions info hyperbolic-workspaces@deedlefake.github.io
+   gnome-extensions info hyperbolic-workspaces@deedles.dev
    ```
 
    The output shows `State: ACTIVE` when the extension is running.

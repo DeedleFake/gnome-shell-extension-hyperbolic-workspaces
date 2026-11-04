@@ -13,7 +13,7 @@ The extension's preferences window has a "Disk drawing" group with a "Focused ti
 ## How to get to it (user POV)
 
 - Open the Extensions app and choose the settings button for Hyperbolic Workspaces.
-- Or run `gnome-extensions prefs hyperbolic-workspaces@deedlefake.github.io`.
+- Or run `gnome-extensions prefs hyperbolic-workspaces@deedles.dev`.
 
 ## Driving it with hw
 
