@@ -5,7 +5,8 @@
 //   WorkspacesDisplay._updateWorkspacesViews   after orig: replace the PRIMARY view with PlaneView (probe A)
 //   WorkspacesDisplay._updateSwipeTracker      after orig: swipe tracker disabled (it assumes a line)
 //   ThumbnailsBox._updateShouldShow            after orig: the primary's is never shown (the minimap is a line too)
-// Not patched: WorkspacesView (never built on the primary monitor), Workspace, WindowPreview, search, Enter,
+//   Workspace._shouldLeaveOverview             PlaneWorkspace only, the primary's: always leave (see below)
+// Not patched: WorkspacesView (never built on the primary monitor), Workspace elsewhere, WindowPreview, search, Enter,
 // Escape. PgUp/PgDn/Home/End never reach WorkspacesDisplay's binding pool: PlaneView stops them in the display's
 // captured-event, which runs before the bindings.
 import {InjectionManager} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -35,6 +36,13 @@ function followOn(adj, index) {
     adj.ease(index, {duration: 250, mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
 }
 
+// GNOME leaves the Overview on a preview's click or Return only when its workspace is already active, since a
+// stock neighbor shows as an edge peek. The plane lets clicks reach only previews the design says enter their
+// window (planeView's window reach), so every one that arrives leaves.
+const PlaneWorkspace = GObject.registerClass(class PlaneWorkspace extends Workspace.Workspace {
+    _shouldLeaveOverview() { return true; }
+});
+
 export class OverviewHook {
     /** @param {{plane, view, disk, settings, windowMoves}} config */
     constructor(config) { this._cfg = config; this._inj = null; this._view = null; this._display = null; }
@@ -53,7 +61,7 @@ export class OverviewHook {
                 ...hook._cfg,
                 monitorIndex: i,
                 overviewAdjustment: this._overviewAdjustment,
-                WorkspaceClass: Workspace.Workspace,
+                WorkspaceClass: PlaneWorkspace,
                 followFocus: ws => this._workspacesOnlyOnPrimary || followOn(this._scrollAdjustment, ws.index()),
                 workArea: () => Main.layoutManager.getWorkAreaForMonitor(i),
                 hideOverview: () => Main.overview.hide(),
