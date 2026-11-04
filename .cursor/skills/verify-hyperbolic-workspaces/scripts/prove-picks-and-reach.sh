@@ -43,6 +43,17 @@ for c in f o x t r o t; do "$hw" key $c >/dev/null; sleep 0.2; done; sleep 2
 check_left "search pick on the active workspace, focus elsewhere" Alpha,Foxtrot Foxtrot
 
 start Alpha
+set -- $(point far-tile-point)
+[ "$#" = 3 ] || fail "no tile outside reach to drag from"
+w0=$("$hw" workspaces)
+"$hw" drag "$2" "$3" $(($2 > 640 ? $2 - 200 : $2 + 200)) "$3" >/dev/null; sleep 1.5
+v=$(visible); w1=$("$hw" workspaces)
+echo "far drag from tile $1: overview=$v workspaces unchanged=$([ "$w0" = "$w1" ] && echo yes || echo no)"
+[ "$v" = true ] || fail "a far drag closed the Overview"
+[ "$w0" = "$w1" ] || fail "a far drag changed the workspaces: $w1"
+"$hw" overview hide >/dev/null; sleep 1
+
+start Alpha
 before=$(active)
 set -- $(point far-tile-point)
 [ "$#" = 3 ] || fail "no tile outside reach takes a click"
@@ -53,20 +64,12 @@ echo "far click on tile $far: focusTile=$t overview=$v active=$a"
 [ "$v" = true ] || fail "a far click closed the Overview"
 [ "$a" = "$before" ] || fail "a far click switched to '$a'"
 [ "$t" = "$far" ] || fail "a far click left the focus on tile $t, want $far"
-set -- $(point far-tile-point)
-[ "$#" = 3 ] || fail "no second tile outside reach"
-w0=$("$hw" workspaces)
-"$hw" drag "$2" "$3" $(($2 > 640 ? $2 - 200 : $2 + 200)) "$3" >/dev/null; sleep 1.5
-v=$(visible); w1=$("$hw" workspaces)
-echo "far drag from tile $1: overview=$v workspaces unchanged=$([ "$w0" = "$w1" ] && echo yes || echo no)"
-[ "$v" = true ] || fail "a far drag closed the Overview"
-[ "$w0" = "$w1" ] || fail "a far drag changed the workspaces: $w1"
 "$hw" overview hide >/dev/null; sleep 1
 
 start Beta
-from=$(tileof Beta); to=$(tileof Alpha)
-[ -n "$from" ] && [ -n "$to" ] || fail "Beta or Alpha has no tile: $(probe)"
-"$hw" drag $(center Beta) $(center Alpha) Super_L >/dev/null; sleep 2
+from=$(tileof Beta); to=$(tileof Delta)
+[ -n "$from" ] && [ -n "$to" ] || fail "Beta or Delta has no tile: $(probe)"
+"$hw" drag $(center Beta) $(center Delta) Super_L >/dev/null; sleep 2
 now=$(tileof Beta); v=$(visible); a=$(active); g=$(connected)
 echo "move-modifier drag of the active workspace Beta from tile $from onto $to: now on tile $now overview=$v active=$a group=$g"
 [ "$v" = true ] || fail "the drag closed the Overview"
