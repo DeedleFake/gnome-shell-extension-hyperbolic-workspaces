@@ -1,6 +1,6 @@
 // Window drops on a tile: occupied tiles take the window, empty tiles get a fresh seated workspace.
 import {test, assert} from './harness.js';
-import {createWindowMoves} from '../src/shell/windowMoves.js';
+import {createWindowMoves} from '../shell/windowMoves.js';
 
 function setup() {
     const ws = [0, 1, 2].map(i => ({i, n_windows: i < 2 ? 1 : 0, index() { return this.i; }}));

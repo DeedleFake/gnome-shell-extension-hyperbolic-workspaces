@@ -3,7 +3,7 @@
 //   'poincare-shader' curved edges via a whole-plane radial FRAGMENT snippet (poincareShader.js). Not built:
 //                     a shader moves pixels but not Clutter picks, so it needs hand-done picking first.
 // The focused tile size travels in DiskRect.size and applies to every model.
-// Callers speak Poincaré disk coordinates and content frames only. Nothing outside src/disk/ branches on the model.
+// Callers speak Poincaré disk coordinates and content frames only. Nothing outside disk/ branches on the model.
 /** @import {Frame, DiskRect, H3} from '../core/types.js' */
 
 /**

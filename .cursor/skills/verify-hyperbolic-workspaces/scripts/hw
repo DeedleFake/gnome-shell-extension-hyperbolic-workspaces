@@ -22,9 +22,8 @@ start_shell() {
 }
 install() {
 	docker exec "$I" sh -c "rm -rf $EXT && mkdir -p $EXT"
-	(cd "$repo/src" && git ls-files --cached --others --exclude-standard . | tar -cf - -T -) | docker exec -i "$I" tar -xf - -C "$EXT"
-	(cd "$repo" && tar -cf - metadata.json schemas) | docker exec -i "$I" tar -xf - -C "$EXT"
-	docker exec "$I" glib-compile-schemas "$EXT/schemas"
+	# The whole tracked tree, as a clone would leave it, including the committed gschemas.compiled.
+	(cd "$repo" && git ls-files --cached --others --exclude-standard | tar -cf - -T -) | docker exec -i "$I" tar -xf - -C "$EXT"
 	docker exec "$I" sh -c "mkdir -p /root/.config/glib-2.0/settings"
 }
 gs() { x "gsettings --schemadir $EXT/schemas $*"; }
@@ -61,8 +60,8 @@ doctor)
 	echo "shell pid: $(docker exec "$I" pgrep -x gnome-shell || echo none)"
 	ev 'Config.PACKAGE_VERSION'
 	ev "JSON.stringify({state: Main.extensionManager.lookup('$UUID')?.state, error: Main.extensionManager.lookup('$UUID')?.error ?? null, ws: global.workspace_manager.n_workspaces, overview: Main.overview.visible})"
-	installed=$(docker exec "$I" sh -c "cd $EXT && find . -name '*.js' -type f | sort | xargs cat | sha1sum")
-	local_=$(cd "$repo/src" && find . -name '*.js' -type f | sort | xargs cat | sha1sum)
+	installed=$(docker exec "$I" sh -c "cd $EXT && find . -name '*.js' -type f | sed 's#^\\./##' | LC_ALL=C sort | xargs cat | sha1sum")
+	local_=$(cd "$repo" && git ls-files --cached --others --exclude-standard '*.js' | LC_ALL=C sort | xargs cat | sha1sum)
 	[ "$installed" = "$local_" ] && echo "installed src matches checkout ($(cd "$repo" && git rev-parse --short HEAD))" || echo "WARN installed src differs from checkout; run '$0 install'" ;;
 install) install; start_shell >/dev/null; echo "reinstalled and restarted" ;;
 restart) start_shell ;;

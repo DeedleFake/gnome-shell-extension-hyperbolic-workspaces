@@ -5,7 +5,7 @@ import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 const KEY = 'focused-tile-size';
-// Mirrors src/disk/fitted.js SIZE and CLICK_CUTOFF; the schema's range enforces the bounds.
+// Mirrors disk/fitted.js SIZE and CLICK_CUTOFF; the schema's range enforces the bounds.
 const KLEIN = 2, CUTOFF = 1.8;
 const STEPS_PER_UNIT = 20;
 // Schema enum nicks in order, with their labels.

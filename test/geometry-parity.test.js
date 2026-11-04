@@ -1,7 +1,7 @@
 // Proves the ESM port reproduces the demo: the same seeded op sequence run on the prototype's
-// CommonJS hyper.js and on src/core/geometry.js yields identical states and moves after every op.
+// CommonJS hyper.js and on core/geometry.js yields identical states and moves after every op.
 import {test, assert, loadDemo, env} from './harness.js';
-import * as G from '../src/core/geometry.js';
+import * as G from '../core/geometry.js';
 
 const HYPER = env('HYPER_JS') ?? '/workspace/hyperbolic-workspaces/hyper.js';
 const D = await loadDemo(HYPER);

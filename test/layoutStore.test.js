@@ -1,8 +1,8 @@
 // The layout survives disable() and enable(): extension.js keeps the plane in layoutStore and the next enable takes it.
 import {test, assert} from './harness.js';
-import {Plane} from '../src/core/plane.js';
-import {ViewState} from '../src/core/view.js';
-import * as layoutStore from '../src/shell/layoutStore.js';
+import {Plane} from '../core/plane.js';
+import {ViewState} from '../core/view.js';
+import * as layoutStore from '../shell/layoutStore.js';
 import {FakeWm, drive, fill} from './fakeWm.js';
 
 const make = () => new Plane({fillOrder: 'distance'});

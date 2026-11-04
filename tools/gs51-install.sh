@@ -6,9 +6,7 @@ uuid=$(sed -n 's/.*"uuid": *"\([^"]*\)".*/\1/p' metadata.json)
 dir=/root/.local/share/gnome-shell/extensions/$uuid
 docker exec gs51 rm -rf "$dir"
 docker exec gs51 mkdir -p "$dir"
-{ (cd src && git ls-files --cached --others --exclude-standard . | tar -cf - -T -) ; } | docker exec -i gs51 tar -xf - -C "$dir"
-tar -cf - metadata.json schemas | docker exec -i gs51 tar -xf - -C "$dir"
-docker exec gs51 glib-compile-schemas "$dir/schemas"
+git ls-files --cached --others --exclude-standard | tar -cf - -T - | docker exec -i gs51 tar -xf - -C "$dir"
 docker exec gs51 sh -c "export DBUS_SESSION_BUS_ADDRESS=\$(cat /tmp/bus); gsettings set org.gnome.shell enabled-extensions \"['$uuid']\"; gsettings set org.gnome.shell disable-user-extensions false"
 docker exec gs51 /restart-shell.sh
 for i in $(seq 60); do
