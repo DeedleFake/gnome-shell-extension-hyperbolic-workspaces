@@ -100,7 +100,7 @@ The model abstracts these, so a pass says nothing about them:
 
 ## Coverage record
 
-Sync commit: `06c6855` (the code at this commit was checked against the model).
+Sync commit: `28b4812` (the code at this commit was checked against the model).
 
 - `shell/planeView.js`: `_init` (open, `active-workspace-changed`, each window's `raised`), `kick` / `_matchActiveToFocus`, `vfunc_allocate` (window reach), `handleKey`, `vfunc_captured_event`, `_apply`, `_enter`, `_workspaceOn`, `_dropTile`, `_activate`, `prepareToLeaveOverview`.
 - `shell/overviewHook.js`: `PlaneWorkspace._shouldLeaveOverview`, `_updateWorkspacesViews`.
