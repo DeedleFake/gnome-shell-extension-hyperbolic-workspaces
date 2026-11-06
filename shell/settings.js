@@ -15,6 +15,4 @@ export class Settings {
     get moveModifier() { return MODIFIERS[this._s.get_string('move-modifier')] ?? MODIFIERS.super; }
     /** Focused tile size remap: 1 is the plain drawing, 2 is Klein. @returns {number} */
     get focusedTileSize() { return this._s.get_double('focused-tile-size'); }
-    /** @returns {boolean} PgUp/PgDn activate (GNOME) instead of only moving focus (demo, default false) */
-    get pageKeysActivate() { return this._s.get_boolean('page-keys-activate'); }
 }

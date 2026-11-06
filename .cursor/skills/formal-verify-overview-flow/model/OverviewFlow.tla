@@ -17,7 +17,7 @@ CONSTANTS
     ClickFocuses,           \* core/view.js click: this._goTo(tile)
     CutoffLimitsWindows,    \* shell/planeView.js vfunc_allocate: _windowReach at CLICK_CUTOFF
     PreviewAlwaysLeaves,    \* shell/overviewHook.js PlaneWorkspace._shouldLeaveOverview() true
-    PageKeysActivate,       \* shell/planeView.js handleKey: ACTIVATES && pageKeysActivate -> _activate
+    FocusSettlesActivates,  \* shell/planeView.js _matchActiveToFocus: settled focus activates that workspace
     PageMath,               \* core/view.js nav: the PgUp/PgDn/Home/End index into plane.seated()
     ModKeysIgnored,         \* shell/planeView.js handleKey: MODIFIER_MASK -> EVENT_PROPAGATE
     ArrowGoesToNeighbor,    \* core/view.js nav: this._goTo(best)
@@ -44,10 +44,10 @@ Out == "outside the disk"
 Pool == {"A", "B", "E", "N"}
 PageActs == {"pageUp", "pageDown", "home", "end"}
 
-VARIABLES s, last, big, pageAct
-vars == <<s, last, big, pageAct>>
+VARIABLES s, last, big
+vars == <<s, last, big>>
 \* TLC tells states apart by this view. `last` only names the step that led here.
-StateView == <<s, big, pageAct>>
+StateView == <<s, big>>
 
 \* The `hw scene` start: E is empty and active, A and B have one window each, GNOME order E, A, B.
 S0 == [ov |-> "closed", search |-> FALSE,
@@ -58,7 +58,6 @@ S0 == [ov |-> "closed", search |-> FALSE,
 Init == /\ s = S0
         /\ last = [act |-> "start", tile |-> None, src |-> None]
         /\ big \in BOOLEAN       \* focused-tile-size >= CLICK_CUTOFF (1.8)
-        /\ pageAct \in BOOLEAN   \* page-keys-activate
 
 Seated(st) == {st.seat[t] : t \in Tiles} \ {None}
 TileOf(st, w) == CHOOSE t \in Tiles : st.seat[t] = w
@@ -108,11 +107,19 @@ Hide(st) ==
 \* planeView.js _windowReach: from CLICK_CUTOFF only the focused tile's previews take the pointer.
 WReach(st) == IF big /\ CutoffLimitsWindows THEN {st.focus} ELSE Reach(st.focus)
 
+\* Settled focus activates that workspace (planeView.js _matchActiveToFocus), Overview stays open.
+\* A blank tile runs EnterTile (openOn) then keeps ov open.
+FocusSettle(st, t) ==
+    IF ~FocusSettlesActivates THEN [st EXCEPT !.focus = t]
+    ELSE IF ~CanEnter(st, t) THEN [st EXCEPT !.focus = t]
+    ELSE LET st1 == EnterTile([st EXCEPT !.focus = t], t)
+         IN Prune([st1 EXCEPT !.focus = IF st1.seat[t] # None THEN t ELSE TileOf(st1, st1.active)])
+
 \* core/view.js click via planeView.js _apply 'click'.
 ClickTile(st, t) ==
     IF ClickOnlyInReach /\ t \notin Reach(st.focus) THEN st
     ELSE IF t = st.focus THEN (IF FocusedClickEnters /\ CanEnter(st, t) THEN Hide(EnterTile(st, t)) ELSE st)
-    ELSE IF ClickFocuses THEN [st EXCEPT !.focus = t] ELSE st
+    ELSE IF ClickFocuses THEN FocusSettle(st, t) ELSE st
 
 \* GNOME's WindowPreview click: Main.activateWindow switches and raises, then leaves when _shouldLeaveOverview().
 WindowActivate(st, w) ==
@@ -132,8 +139,8 @@ PageTarget(st, nav) ==
 PageKey(st, nav) ==
     IF ~PageMath THEN st
     ELSE LET w == st.order[PageTarget(st, nav)]
-             st1 == [st EXCEPT !.focus = TileOf(st, w)]
-         IN IF PageKeysActivate /\ pageAct THEN Prune(Activate(st1, w)) ELSE st1
+             t == TileOf(st, w)
+         IN FocusSettle(st, t)
 
 \* shell/windowMoves.js dropOn via planeView.js acceptDrop/_dropTile.
 DropWindow(st, w, t) ==
@@ -158,7 +165,7 @@ MoveWs(st, src, t) ==
 Do(a, t, src, st2) ==
     /\ s' = st2
     /\ last' = [act |-> a, tile |-> t, src |-> src]
-    /\ UNCHANGED <<big, pageAct>>
+    /\ UNCHANGED big
 
 Browsing == s.ov = "open" /\ ~s.search
 
@@ -174,7 +181,7 @@ YouSwitchWhileClosed == s.ov = "closed" /\ \E w \in Seated(s) \ {s.active} :
     Do("switchClosed", TileOf(s, w), None, Prune([s EXCEPT !.active = w]))
 
 YouPressArrow == Browsing /\ \E t \in Nbr(s.focus) :
-    Do("arrow", t, None, IF ArrowGoesToNeighbor THEN [s EXCEPT !.focus = t] ELSE s)
+    Do("arrow", t, None, IF ArrowGoesToNeighbor THEN FocusSettle(s, t) ELSE s)
 
 YouPressPageKey == Browsing /\ \E nav \in PageActs : Do(nav, None, None, PageKey(s, nav))
 
@@ -211,16 +218,16 @@ YouDragWindow == Browsing /\ \E src \in Tiles, t \in Tiles \cup {Out} :
           /\ (t # Out /\ s.seat[t] = None => Free(s) # {})
           /\ Do("dragwindow", t, src, DropWindow(s, s.seat[src], t))
        \/ /\ src \notin WReach(s) /\ t = Out
-          /\ \E p \in Tiles : Do("dragwindow", p, src, IF PanEndRefocus THEN [s EXCEPT !.focus = p] ELSE s)
+          /\ \E p \in Tiles : Do("dragwindow", p, src, IF PanEndRefocus THEN FocusSettle(s, p) ELSE s)
 
 \* A plain drag on empty space; on release the tile nearest the disk's center takes the focus.
 YouPan == Browsing /\ \E p \in Tiles :
-    Do("pan", p, None, IF PanEndRefocus THEN [s EXCEPT !.focus = p] ELSE s)
+    Do("pan", p, None, IF PanEndRefocus THEN FocusSettle(s, p) ELSE s)
 
 \* The rim arrow shows while no workspace is near the focus (core/view.js _rimAt).
 YouClickRim == Browsing /\ Seated(s) # {} /\ \A t \in Near(s.focus) : s.seat[t] = None /\
     \E c \in {TileOf(s, w) : w \in Seated(s)} :
-        Do("rim", c, None, IF RimToCenter THEN [s EXCEPT !.focus = c] ELSE s)
+        Do("rim", c, None, IF RimToCenter THEN FocusSettle(s, c) ELSE s)
 
 \* Drag a workspace with the move-modifier held and drop it on t.
 YouMoveWorkspace == Browsing /\ \E src \in Tiles, t \in Tiles \cup {Out} :
@@ -237,7 +244,8 @@ Spec == Init /\ [][Next]_vars
 \* Rn is the rule number in SKILL.md. A step rule reads s (before), s' (after) and last' (the step).
 \* Each is a PROPERTY of the form [][Step]_vars, so TLC checks it on every step it explores.
 DesignWReach(st) == IF big THEN {st.focus} ELSE Reach(st.focus)
-Unmoved == s'.seat = s.seat /\ s'.win = s.win /\ s'.active = s.active /\ s'.ov = "open"
+\* Overview stays open; seat/win may change when a blank tile gets a workspace. Active follows focus.
+FocusOpen == s'.ov = "open" /\ (s'.seat[s'.focus] = None \/ s'.active = s'.seat[s'.focus])
 IsClose == \/ last'.act = "close"
            \/ (last'.act = "escape" /\ ~s.search)
            \/ (last'.act = "clicktile" /\ last'.tile = s.focus)
@@ -271,17 +279,14 @@ WindowClickLeaves == [][(WindowClick /\ (s.seat[last'.tile] # s.active \/ last'.
 \* The window is on the active workspace and the focus is on another tile.
 ActiveWindowClickLeaves == [][(WindowClick /\ s.seat[last'.tile] = s.active /\ last'.tile # s.focus) => WindowLeaves]_vars
 \* R4, R16
-NearClickFocuses == [][(last'.act = "clicktile" /\ last'.tile \in Nbr(s.focus)) => (s'.focus = last'.tile /\ Unmoved)]_vars
+NearClickFocuses == [][(last'.act = "clicktile" /\ last'.tile \in Nbr(s.focus)) => (s'.focus = last'.tile /\ FocusOpen)]_vars
 \* R19
 CutoffNeighborClickFocuses ==
-    [][(last'.act = "clickwindow" /\ big /\ last'.tile \in Nbr(s.focus)) => (s'.focus = last'.tile /\ Unmoved)]_vars
+    [][(last'.act = "clickwindow" /\ big /\ last'.tile \in Nbr(s.focus)) => (s'.focus = last'.tile /\ FocusOpen)]_vars
 \* R8
-ArrowMovesToNeighbor == [][last'.act = "arrow" => (s'.focus = last'.tile /\ Unmoved)]_vars
-\* R13
-PageKeysActivateSetting == [][last'.act \in PageActs =>
-    /\ s'.ov = "open"
-    /\ (pageAct => s'.active = s'.seat[s'.focus])
-    /\ (~pageAct => s'.active = s.active)]_vars
+ArrowMovesToNeighbor == [][last'.act = "arrow" => (s'.focus = last'.tile /\ FocusOpen)]_vars
+\* R13: settled focus is the active workspace (stock GNOME). Page keys included.
+SettledFocusIsActive == [][last'.act \in PageActs => FocusOpen /\ s'.seat[s'.focus] # None]_vars
 \* R11, R12 (O2): the page keys walk GNOME's own workspace order. An empty workspace you are on
 \* stays in that order until GNOME removes it, which the model folds into the step that leaves it.
 PageKeysFollowGnomeOrder == [][last'.act \in PageActs =>
@@ -299,14 +304,15 @@ ModifiedKeysIgnored == [][last'.act = "modkey" => s' = s]_vars
 WindowDrops == [][last'.act = "dragwindow" =>
     LET w == s.seat[last'.src]
         t == last'.tile
-    IN /\ s'.active = s.active /\ s'.ov = "open"
+    IN /\ s'.ov = "open"
        /\ IF last'.src \notin Reach(s.focus) \/ (big /\ last'.src # s.focus)
           THEN s'.win = s.win
-          ELSE IF t # Out /\ t \in Reach(s.focus) /\ s.seat[t] # w
-          THEN IF s.seat[t] # None
-               THEN s'.win[s.seat[t]] = s.win[s.seat[t]] + 1
-               ELSE s'.seat[t] # None /\ s'.win[s'.seat[t]] = 1
-          ELSE s'.win = s.win /\ s'.seat = s.seat]_vars
+          ELSE /\ s'.active = s.active
+               /\ IF t # Out /\ t \in Reach(s.focus) /\ s.seat[t] # w
+                  THEN IF s.seat[t] # None
+                       THEN s'.win[s.seat[t]] = s.win[s.seat[t]] + 1
+                       ELSE s'.seat[t] # None /\ s'.win[s'.seat[t]] = 1
+                  ELSE s'.win = s.win /\ s'.seat = s.seat]_vars
 \* R23, R24
 WorkspaceMoves == [][(last'.act = "movews" /\ last'.tile # Out /\ s.seat[last'.src] # s.active)
                      => (s'.seat[last'.tile] = s.seat[last'.src] /\ s'.win = s.win
@@ -320,7 +326,7 @@ ActiveWorkspaceMoves == [][(last'.act = "movews" /\ last'.tile # Out /\ s.seat[l
 \* R28
 RimReturnsToGroup == [][last'.act = "rim" => s'.seat[s'.focus] # None]_vars
 \* R30 (O5)
-PanReleaseFocusesNearest == [][last'.act = "pan" => (s'.focus = last'.tile /\ Unmoved)]_vars
+PanReleaseFocusesNearest == [][last'.act = "pan" => (s'.focus = last'.tile /\ FocusOpen)]_vars
 \* R33
 EmptyHopKeepsWorkspace == [][(IsClose /\ s.seat[s.focus] = None /\ s.win[s.active] = 0) => s'.active = s.active]_vars
 \* R34
@@ -328,5 +334,5 @@ EscapeClearsSearchFirst == [][(last'.act = "escape" /\ s.search) => (s'.ov = "op
 
 \* R18 (O1): a click farther out than reach focuses that tile. Was finding F2.
 FarClickFocuses == [][(last'.act \in {"clicktile", "clickwindow"} /\ last'.tile \notin Reach(s.focus))
-                      => (s'.focus = last'.tile /\ s'.ov = "open")]_vars
+                      => (s'.focus = last'.tile /\ FocusOpen)]_vars
 ====

@@ -1,5 +1,6 @@
 #!/bin/sh
 # Leaving an empty workspace for a blank tile lands on that tile, by click and by closing the Overview.
+# Focusing the blank seats the empty workspace there right away (focus is active). Closing or a second click enters it.
 # The blank tile touches only the workspace being left, so the plane loses that link as GNOME removes it.
 # GNOME then holds one empty workspace, so Super+PgUp goes to Delta.
 # Run after `hw up` and `hw scene`. Exits non-zero on the first failed check.
@@ -13,7 +14,7 @@ alpha() { "$hw" eval "global.get_window_actors().map(a => a.meta_window).find(w 
 for how in click Escape; do
     alpha
     "$hw" overview show >/dev/null; sleep 1.5
-    for _ in 1 2 3 4; do [ "$(probe | field focus)" = "(no workspace)" ] && break; "$hw" key Right >/dev/null; sleep 0.7; done
+    for _ in 1 2 3 4; do [ "$(probe | field focus)" = "(empty)" ] && break; "$hw" key Right >/dev/null; sleep 0.7; done
     "$hw" key Escape >/dev/null; sleep 1.5
     "$hw" overview show >/dev/null; sleep 1.5
     [ "$(probe | field active)" = "(empty)" ] || fail "$how: setup did not leave an empty workspace active"
