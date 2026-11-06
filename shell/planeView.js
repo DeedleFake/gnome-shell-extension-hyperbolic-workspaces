@@ -18,8 +18,6 @@ const NAV = {
     [Clutter.KEY_Page_Up]: 'pageUp', [Clutter.KEY_Page_Down]: 'pageDown', [Clutter.KEY_Home]: 'home',
     [Clutter.KEY_End]: 'end',
 };
-/** Keys that switch the workspace too when page-keys-activate is on. */
-const ACTIVATES = new Set(['pageUp', 'pageDown', 'home', 'end']);
 const RIM_HIT = 0.15;
 /** Pointer and touch events -> gesture input kind. A touch drives the plane like the primary button. */
 const KIND = new Map([
@@ -91,6 +89,8 @@ class PlaneView extends St.Widget {
         for (const a of global.get_window_actors()) a.meta_window.connectObject('raised', picked, this);
         global.display.connectObject('window-created', (_d, w) => w.connectObject('raised', picked, this), this);
         this._followed = null;
+        this._blankOpened = null;
+        this._matching = false;
         config.overviewAdjustment.connectObject('notify::value', () => this._syncState(), this);
         this.connect('notify::mapped', () => { if (this.mapped) { this.grab_key_focus(); this.kick(); } });
         this.connect('destroy', () => this._onDestroy());
@@ -103,9 +103,45 @@ class PlaneView extends St.Widget {
         // pointer handler's own kick() runs. New Workspaces built then would leak and trip GC criticals.
         if (this._destroyed) return;
         this._syncActors();
-        const f = this._cfg.view.focus;
-        if (f.kind === 'ws' && f.key !== this._followed) this._cfg.followFocus(this._followed = f.key);
+        this._matchActiveToFocus();
         this.queue_relayout();
+    }
+
+    /**
+     * Focus and GNOME's active workspace are the same thing, as in stock GNOME. Every settled focus
+     * change activates that workspace. A blank tile gets a workspace through openOn (reuse the trailing
+     * empty, or move the empty active one), then activates. `_matching` stops the activate signal from
+     * re-entering. Only runs when the focused identity changes, not on every animation frame.
+     */
+    _matchActiveToFocus() {
+        if (this._matching || this._destroyed) return;
+        this._matching = true;
+        try {
+            const f = this._cfg.view.focus;
+            let ws;
+            if (f.kind === 'ws') {
+                ws = f.key;
+                this._blankOpened = null;
+            } else {
+                // reserve() is only a hint until Plane.sync; keep the workspace we opened for this tile.
+                if (this._blankOpened === f.tile)
+                    ws = this._cfg.plane.at(f.tile) ?? this._followed;
+                if (!ws) {
+                    this._blankOpened = f.tile;
+                    ws = this._workspaceOn(f.tile);
+                }
+                this._cfg.view.focusKey(ws);
+            }
+            if (!ws) return;
+            if (ws !== this._activated || ws !== global.workspace_manager.get_active_workspace())
+                this._activate(ws);
+            if (ws !== this._followed) {
+                this._followed = ws;
+                this._cfg.followFocus(ws);
+            }
+        } finally {
+            this._matching = false;
+        }
     }
 
     /** One GNOME Workspace per seated key. Outside allocation: a new child must not be added mid-allocate. */
@@ -231,9 +267,6 @@ class PlaneView extends St.Widget {
         if (!nav || event.get_state() & Clutter.ModifierType.MODIFIER_MASK & ~Clutter.ModifierType.LOCK_MASK & ~Clutter.ModifierType.MOD2_MASK)
             return Clutter.EVENT_PROPAGATE;
         this._cfg.view.nav(nav);
-        const f = this._cfg.view.focus;
-        if (ACTIVATES.has(nav) && this._cfg.settings.pageKeysActivate && f.kind === 'ws')
-            this._activate(f.key);
         this.kick();
         return Clutter.EVENT_STOP;
     }
@@ -358,7 +391,8 @@ class PlaneView extends St.Widget {
 
     _activate(ws) {
         this._activated = ws;
-        ws.activate(global.get_current_time());
+        if (ws !== global.workspace_manager.get_active_workspace())
+            ws.activate(global.get_current_time());
     }
 
     /** GNOME calls this on every close (Escape, Super, a hide, a swipe): enter the focused workspace. */

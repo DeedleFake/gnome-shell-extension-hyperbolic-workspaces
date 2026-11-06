@@ -1,4 +1,4 @@
-// Preferences: the focused tile size slider with a reset, the page-key switch and the move modifier.
+// Preferences: the focused tile size slider with a reset, and the move modifier.
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
@@ -50,11 +50,6 @@ export default class HyperbolicWorkspacesPrefs extends ExtensionPreferences {
 
 function keysGroup(settings) {
     const group = new Adw.PreferencesGroup({title: 'Keys and dragging'});
-    const pageKeys = new Adw.SwitchRow({
-        title: 'Page keys switch workspaces',
-        subtitle: 'PgUp, PgDn, Home and End switch to the workspace, not just move the focus',
-    });
-    settings.bind('page-keys-activate', pageKeys, 'active', Gio.SettingsBindFlags.DEFAULT);
     const modifier = new Adw.ComboRow({
         title: 'Move modifier',
         subtitle: 'Hold it while dragging to move a whole workspace',
@@ -67,7 +62,6 @@ function keysGroup(settings) {
     sync();
     settings.connect('changed::move-modifier', sync);
     modifier.connect('notify::selected', () => settings.set_string('move-modifier', MODIFIERS[modifier.selected][0]));
-    group.add(pageKeys);
     group.add(modifier);
     return group;
 }
