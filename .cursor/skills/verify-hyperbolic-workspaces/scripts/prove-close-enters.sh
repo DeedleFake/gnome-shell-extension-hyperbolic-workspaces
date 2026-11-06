@@ -21,13 +21,13 @@ for close in Escape Super_L hide; do
     [ "$got" = "$want" ] || fail "$close left the active workspace on '$got', focused workspace holds $want"
 done
 
-# A tile with no workspace is entered too: closing on it opens a workspace there, as clicking it does.
+# Focusing a blank tile seats an empty workspace there (focus is active). Closing enters that tile.
 # Each case starts on Alpha's workspace; prove-empty-hop.sh covers leaving an empty workspace.
 for close in Escape Super_L hide; do
     "$hw" eval "global.get_window_actors().map(a => a.meta_window).find(w => w.title === 'Alpha').get_workspace().activate(global.get_current_time())" >/dev/null; sleep 1
     "$hw" overview show >/dev/null; sleep 1.5
-    for _ in 1 2 3 4; do [ "$(focus)" = "(no workspace)" ] && break; "$hw" key Right >/dev/null; sleep 0.7; done
-    t=$(tile); [ "$(focus)" = "(no workspace)" ] || fail "$close: could not focus a tile with no workspace"
+    for _ in 1 2 3 4; do [ "$(focus)" = "(empty)" ] && break; "$hw" key Right >/dev/null; sleep 0.7; done
+    t=$(tile); [ "$(focus)" = "(empty)" ] || fail "$close: could not focus a blank tile (focus=$(focus))"
     if [ "$close" = hide ]; then "$hw" overview hide >/dev/null; else "$hw" key "$close" >/dev/null; fi
     sleep 1.5
     "$hw" overview show >/dev/null; sleep 1.5

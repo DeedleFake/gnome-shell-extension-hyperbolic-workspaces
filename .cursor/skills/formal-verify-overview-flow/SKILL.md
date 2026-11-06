@@ -7,7 +7,7 @@ description: Model-check every step a user can take in the Hyperbolic Workspaces
 
 The Overview on the primary monitor is a state machine. The user opens it, moves the focus, clicks, drags and closes it, and each step changes which workspace is focused, which one is active, and which tiles hold workspaces. A wrong step sends the user to the wrong workspace or loses their place, and the container scripts in `verify-hyperbolic-workspaces` only test the orders someone thought to write.
 
-`model/OverviewFlow.tla` models each user step as one atomic step and checks every order of steps from the `hw scene` start, for both values of `focused-tile-size >= 1.8` and of `page-keys-activate`. TLC is the checker because the question is "can some order of steps break a rule", which a model checker answers for every order in the bound.
+`model/OverviewFlow.tla` models each user step as one atomic step and checks every order of steps from the `hw scene` start, for both values of `focused-tile-size >= 1.8`. TLC is the checker because the question is "can some order of steps break a rule", which a model checker answers for every order in the bound.
 
 ## Run
 
@@ -44,11 +44,11 @@ R numbers are the rule numbers of the design recall (`decided` means the user de
 | `ActiveSearchPickWins` | 3 | decided | Same, for a result on the active workspace while the focus is on another tile. |
 | `WindowClickLeaves` | 17 | decided | A click on a window preview in reach leaves with its workspace active, when the window is on another workspace or on the focused tile. |
 | `ActiveWindowClickLeaves` | 17 | decided | Same, for a window on the active workspace while the focus is on another tile. |
-| `NearClickFocuses` | 4, 16 | decided | A click on a neighbor tile focuses it and changes nothing else. |
-| `FarClickFocuses` | 18 | decided | A click on a tile farther out than reach, or on a window there, focuses that tile and does not leave. |
-| `CutoffNeighborClickFocuses` | 19 | decided | From size 1.8, a click on a neighbor's window focuses that tile and does not leave. |
-| `ArrowMovesToNeighbor` | 8 | decided | An arrow moves the focus to a neighbor and changes nothing else. |
-| `PageKeysActivateSetting` | 13 | decided | With `page-keys-activate` on, the page keys also switch workspace. Off, they only move focus. The Overview stays open. |
+| `NearClickFocuses` | 4, 16 | decided | A click on a neighbor tile focuses it, activates that workspace, and keeps the Overview open. |
+| `FarClickFocuses` | 18 | decided | A click on a tile farther out than reach, or on a window there, focuses that tile, activates it, and does not leave. |
+| `CutoffNeighborClickFocuses` | 19 | decided | From size 1.8, a click on a neighbor's window focuses that tile, activates it, and does not leave. |
+| `ArrowMovesToNeighbor` | 8 | decided | An arrow moves the focus to a neighbor, activates that workspace, and keeps the Overview open. |
+| `SettledFocusIsActive` | 13 | decided | Every settled focus change (page keys included) makes that workspace active. The Overview stays open. Matches stock GNOME. |
 | `PageKeysFollowGnomeOrder` | 11, 12 | decided | Home and End go to the first and last workspace in GNOME's order, and Page Up and Down step through it. An empty workspace you are on is in that order until GNOME removes it. |
 | `ModifiedKeysIgnored` | 15 | code only | A plane key with Ctrl, Alt, Shift or Super held changes nothing. |
 | `WindowDrops` | 21, 22 | decided | A window dragged inside reach and dropped on another reachable workspace joins it. On a blank reachable tile it opens a new workspace. Anywhere else nothing changes. A drag outside reach pans. |
@@ -56,7 +56,7 @@ R numbers are the rule numbers of the design recall (`decided` means the user de
 | `DropOutsideCancels` | 26 | code only | A workspace dropped outside the disk changes nothing. |
 | `ActiveWorkspaceMoves` | 27 | decided | A modifier-drag moves the active workspace to the tile it is dropped on, like any other workspace. |
 | `RimReturnsToGroup` | 28 | decided | The rim arrow focuses a workspace in the group. |
-| `PanReleaseFocusesNearest` | 30 | decided | Releasing a pan focuses the tile nearest the center and changes nothing else. |
+| `PanReleaseFocusesNearest` | 30 | decided | Releasing a pan focuses the tile nearest the center, activates it, and keeps the Overview open. |
 | `EmptyHopKeepsWorkspace` | 33 | decided | Entering a blank tile from an empty active workspace moves that workspace there. |
 | `OneEmptyWorkspace` | 33 | decided | At most one workspace on the plane has no windows. |
 | `EscapeClearsSearchFirst` | 34 | decided | Escape in search clears the search and keeps the Overview open. |
@@ -72,13 +72,15 @@ The user answered O1 to O5 on 2026-11-04.
 - O3. The three-way arrow-key setting is dropped by the user. Nothing to model.
 - O4. The active workspace must be draggable like any other. Checked by `ActiveWorkspaceMoves`.
 - O5. Releasing a pan focuses the tile nearest the center. Checked by `PanReleaseFocusesNearest`.
-- O6. Still open: what happens on other monitors with "workspaces on primary display only" off. Out of the model's scope until the user answers.
+- O6. Closed for the focus/active split: focus and the active workspace are the same thing, as in stock GNOME. Other-monitor thumbnail layout details stay out of this model's scope.
 
 ## Findings
 
 None open. A finding is a decided rule that the code breaks. List it here with its shortest path, and add its rule to `KNOWN` in the script.
 
 The first run found three, and all three are fixed. Each one's rule is now in the decided list.
+
+Rule 13 used to be a `page-keys-activate` setting that left focus and the active workspace as two things. The user merged them: every settled focus change activates that workspace, like stock GNOME, and the setting is gone. `SettledFocusIsActive` checks the new rule.
 
 - F1. A window click, or a search pick, on the active workspace while the focus sat on another tile closed the Overview on the focused tile. GNOME switches nothing for a window on the active workspace, so the focus did not follow. Now a window's `raised` signal, which GNOME emits for every activation, moves the focus to that window's workspace (step `Raise`, fact `RaiseMovesFocus`).
 - F2. A click on a tile farther out than reach did nothing, because `ViewState.click` returned `'ignored'` there. Now the click focuses the tile. Only a click on the focused tile enters.
@@ -100,7 +102,7 @@ The model abstracts these, so a pass says nothing about them:
 
 Sync commit: `06c6855` (the code at this commit was checked against the model).
 
-- `shell/planeView.js`: `_init` (open, `active-workspace-changed`, each window's `raised`), `vfunc_allocate` (window reach), `handleKey`, `vfunc_captured_event`, `_apply`, `_enter`, `_workspaceOn`, `_dropTile`, `_activate`, `prepareToLeaveOverview`.
+- `shell/planeView.js`: `_init` (open, `active-workspace-changed`, each window's `raised`), `kick` / `_matchActiveToFocus`, `vfunc_allocate` (window reach), `handleKey`, `vfunc_captured_event`, `_apply`, `_enter`, `_workspaceOn`, `_dropTile`, `_activate`, `prepareToLeaveOverview`.
 - `shell/overviewHook.js`: `PlaneWorkspace._shouldLeaveOverview`, `_updateWorkspacesViews`.
 - `shell/windowMoves.js`: `openOn`, `dropOn`.
 - `core/view.js`: `reach`, `nav`, `focusKey`, `recenter`, `click`, `panEnd`.
@@ -141,7 +143,7 @@ Each decided rule was seen to fail on a scratch edit of the real code, which was
 | `FarClickFocuses` | put back `if (!this.reach().has(tile)) return 'ignored';` at the top of `ViewState.click` |
 | `CutoffNeighborClickFocuses` | compare `d.size >= 99` for the window reach |
 | `ArrowMovesToNeighbor` | `this._goTo(from);` at the end of `nav` |
-| `PageKeysActivateSetting` | `&& false` in place of `&& f.kind === 'ws'` in `handleKey` |
+| `SettledFocusIsActive` | delete `this._matchActiveToFocus();` from `kick` |
 | `PageKeysFollowGnomeOrder` | swap the `pageDown` step sign in `nav` |
 | `ModifiedKeysIgnored` | `if (!nav)` in `handleKey` |
 | `WindowDrops` | drop `|| !this._reach.has(tile)` in `_dropTile` |

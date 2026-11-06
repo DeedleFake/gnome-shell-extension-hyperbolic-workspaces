@@ -1,7 +1,7 @@
 #!/bin/sh
 # A window or search pick on the active workspace wins over the plane's focus. A click outside reach focuses that
-# tile and enters nothing, and a drag there still pans. The active workspace moves with the move modifier like any
-# other, and the group stays connected. Run after `hw up` and `hw scene`. Exits non-zero on the first failed check.
+# tile, activates it, and enters nothing, and a drag there still pans. The active workspace moves with the move
+# modifier like any other, and the group stays connected. Run after `hw up` and `hw scene`. Exits non-zero on the first failed check.
 set -eu
 hw="$(dirname "$0")/hw"
 fail() { echo "FAIL: $*"; exit 1; }
@@ -54,16 +54,15 @@ echo "far drag from tile $1: overview=$v workspaces unchanged=$([ "$w0" = "$w1" 
 "$hw" overview hide >/dev/null; sleep 1
 
 start Alpha
-before=$(active)
 set -- $(point far-tile-point)
 [ "$#" = 3 ] || fail "no tile outside reach takes a click"
 far=$1
 "$hw" click "$2" "$3" >/dev/null; sleep 1.5
-t=$(ftile); v=$(visible); a=$(active)
-echo "far click on tile $far: focusTile=$t overview=$v active=$a"
+t=$(ftile); v=$(visible); a=$(active); f=$(focus)
+echo "far click on tile $far: focusTile=$t focus=$f overview=$v active=$a"
 [ "$v" = true ] || fail "a far click closed the Overview"
-[ "$a" = "$before" ] || fail "a far click switched to '$a'"
 [ "$t" = "$far" ] || fail "a far click left the focus on tile $t, want $far"
+[ "$a" = "$f" ] || fail "a far click left active '$a' while focus is '$f'"
 "$hw" overview hide >/dev/null; sleep 1
 
 start Beta
