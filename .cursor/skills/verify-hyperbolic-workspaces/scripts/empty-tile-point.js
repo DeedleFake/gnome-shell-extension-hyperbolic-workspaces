@@ -8,15 +8,19 @@ globalThis.hwEmptyTilePoint = (() => {
     if (!v) return 'none';
     const C = imports.gi.Clutter;
     const focus = v._cfg.view.focus;
+    const focusTile = focus.kind === 'ws' ? v._cfg.plane.seatOf(focus.key)?.tile : focus.tile;
+    const focusEmpty = focus.kind === 'tile'
+        || (focus.kind === 'ws' && focus.key.n_windows === 0);
     let any = null;
     for (let y = 110; y < 670; y += 20) {
         for (let x = 20; x < 1280; x += 20) {
             const [, lx, ly] = v.transform_stage_point(x, y);
             const t = v._tileAt(lx, ly);
-            if (t === null || t === undefined || !v._reach.has(t) || v._cfg.plane.at(t)) continue;
+            if (t === null || t === undefined || !v._reach.has(t)) continue;
             if (global.stage.get_actor_at_pos(C.PickMode.REACTIVE, x, y) !== v) continue;
-            if (focus.kind === 'tile' && focus.tile === t) return x + " " + y;
-            if (!any) any = x + " " + y;
+            if (focusEmpty && t === focusTile) return x + ' ' + y;
+            if (v._cfg.plane.at(t)) continue;
+            if (!any) any = x + ' ' + y;
         }
     }
     return any ?? 'none';
