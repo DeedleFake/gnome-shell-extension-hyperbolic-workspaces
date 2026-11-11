@@ -11,7 +11,7 @@ TLA_VERSION=1.7.4
 TLA_SHA256=936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88
 
 RULES=(TypeOK ActiveOnPlane OneEmptyWorkspace OpeningFocusesActive ClosingEntersFocused SearchPickWins WindowClickLeaves
-  NearClickFocuses CutoffNeighborClickFocuses ArrowMovesToNeighbor PageKeysActivateSetting
+  NearClickFocuses CutoffNeighborClickFocuses ArrowMovesToNeighbor SettledFocusIsActive
   PageKeysFollowGnomeOrder ModifiedKeysIgnored WindowDrops WorkspaceMoves DropOutsideCancels
   RimReturnsToGroup PanReleaseFocusesNearest EmptyHopKeepsWorkspace
   EscapeClearsSearchFirst ActiveWindowClickLeaves ActiveSearchPickWins FarClickFocuses ActiveWorkspaceMoves)
@@ -84,8 +84,8 @@ fact CutoffLimitsWindows "$(all "$(has $PV "this._windowReach = d.size >= CLICK_
   "$(has disk/fitted.js "export const CLICK_CUTOFF = 1.8;")")"
 fact PreviewAlwaysLeaves "$(all "$(has shell/overviewHook.js "class PlaneWorkspace extends Workspace.Workspace {" "_shouldLeaveOverview() { return true; }")" \
   "$(has shell/overviewHook.js "WorkspaceClass: PlaneWorkspace,")")"
-fact PageKeysActivate "$(all "$(has $PV "const ACTIVATES = new Set(['pageUp', 'pageDown', 'home', 'end']);")" \
-  "$(has $PV "if (ACTIVATES.has(nav) && this._cfg.settings.pageKeysActivate && f.kind === 'ws')" "this._activate(f.key);")")"
+fact FocusSettlesActivates "$(all "$(has $PV "_matchActiveToFocus() {" "if (ws !== this._activated || ws !== global.workspace_manager.get_active_workspace())" "this._activate(ws);")" \
+  "$(has $PV "kick() {" "this._matchActiveToFocus();")")"
 fact PageMath "$(has $VJ "const list = this._plane.seated();" "const i = this._focus.kind === 'ws' ? list.indexOf(this._focus.key) : -1;" \
   "const j = nav === 'home' ? 0 : nav === 'end' ? list.length - 1
                 : i < 0 ? 0 : Math.max(0, Math.min(list.length - 1, i + (nav === 'pageDown' ? 1 : -1)));" \

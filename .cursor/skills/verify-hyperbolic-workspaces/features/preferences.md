@@ -1,6 +1,6 @@
 # Preferences page
 
-The extension's preferences window has a "Disk drawing" group with a "Focused tile size" slider from 1 to 2.5, with marks at 1 and at 2 (Klein), and a reset button. Moving the slider writes `focused-tile-size` right away, and the reset button returns it to 1. A "Keys and dragging" group has a "Page keys switch workspaces" switch for `page-keys-activate` and a "Move modifier" drop-down for `move-modifier`.
+The extension's preferences window has a "Disk drawing" group with a "Focused tile size" slider from 1 to 2.5, with marks at 1 and at 2 (Klein), and a reset button. Moving the slider writes `focused-tile-size` right away, and the reset button returns it to 1. A "Keys and dragging" group has a "Move modifier" drop-down for `move-modifier`.
 
 ## Sub-features
 
@@ -9,7 +9,6 @@ The extension's preferences window has a "Disk drawing" group with a "Focused ti
 - `prefs-slider-reflects` shows the stored value when the window opens and follows outside changes.
 - `prefs-reset` restores the default value of 1 with the reset button.
 - `prefs-overview` makes the Overview use the new value the next time it opens.
-- `prefs-page-keys` toggles `page-keys-activate` with the switch.
 - `prefs-modifier` shows and sets `move-modifier` with the drop-down, and follows outside changes.
 
 ## How to get to it (user POV)
@@ -29,14 +28,13 @@ Preconditions:
 - **Overview reflects it.** Run `hw prefs-close`, `hw overview show` and `hw probe-clicks`. The output is `"size":2,"clickable":[]`. Capture `overview-size-2`.
 - **Reset.** Run `hw prefs`, then `hw a11y do button 'Reset to default'`. `gget` and the slider read `1.0`. After you reopen the Overview, `probe-clicks` shows `"size":1` with all four titles clickable.
 - **AT-SPI value.** `hw a11y set slider '' 2.2` also writes the key, as a screen reader would.
-- **Keys group.** Run `hw prefs` and click the switch (stage `869 424` in a 1280x800 run; check `hw shot`). `hw gget page-keys-activate` reads `true`, and a second click sets it back. Run `hw gset set org.gnome.shell.extensions.hyperbolic-workspaces move-modifier alt`. The drop-down shows `Alt` in `hw shot`. Reset both keys afterward.
+- **Move modifier.** Run `hw prefs`. Run `hw gset set org.gnome.shell.extensions.hyperbolic-workspaces move-modifier alt`. The drop-down shows `Alt` in `hw shot`. Reset the key afterward.
 
 ## Gotchas
 
 - The slider's accessible name is "Focused tile size". `hw a11y value slider ''` still matches it because it is the window's only slider.
 - Keyboard focus starts on the slider when the window opens, so `End` works with no `Tab`. `prove-prefs.sh` still tries up to four `Tab` presses, and in this container one `Tab` left focus on a control where `End` still reached the slider.
 - `gget` prints a stored 2.2 as `2.2000000000000002`. That is how gsettings prints the double 2.2, not a snapping bug.
-- `hw a11y do switch 'Page keys switch workspaces'` fails with "No action with index 0": the first match is the row, not the switch. Use a pointer click.
 - `hw a11y` searches only the `org.gnome.Shell.Extensions` app. The shell's own sliders (volume, brightness) match first otherwise. Set `A11Y_APP` to drive another app.
 - Keys go to the focused window. While the Overview is open, they move the plane's focus instead of the slider, so `hw prefs` closes the Overview first.
 - Proven end to end on 2026-11-02 in container `hw-verify` (GNOME Shell 51.1, `06445c6`), twice in a row with `ALL PASS`, on 2026-11-03 in `hw-p5prefs` at `de0735c` (`prefs-keys`), and on 2026-11-03 in `hw-maint` at `4df89ae`.

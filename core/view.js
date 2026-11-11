@@ -184,7 +184,7 @@ export class ViewState {
 
     /**
      * A key we own. Arrows: drawn edge neighbor nearest the arrow angle. PgUp/PgDn: plane.seated() order,
-     * Home and End: the first and last in that order. Moves focus only; PlaneView decides activation.
+     * Home and End: the first and last in that order. PlaneView activates the focused workspace to match.
      * @param {Nav} nav
      */
     nav(nav) {

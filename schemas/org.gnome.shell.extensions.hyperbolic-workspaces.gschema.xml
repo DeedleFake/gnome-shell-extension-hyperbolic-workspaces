@@ -14,9 +14,5 @@
       <summary>Focused tile size</summary>
       <description>Grows the focused tile and shrinks the rest. 1 is the plain straight-edged drawing; 2 is the Klein model. From 1.8 up only the focused workspace's windows can be clicked.</description>
     </key>
-    <key name="page-keys-activate" type="b">
-      <default>false</default>
-      <summary>PgUp, PgDn, Home and End activate the workspace like GNOME, instead of only moving focus</summary>
-    </key>
   </schema>
 </schemalist>
