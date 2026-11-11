@@ -219,11 +219,10 @@ export class ViewState {
     recenter() { this._goTo(this._plane.center, true); }
 
     /**
-     * Click on a tile in reach. First click focuses; a click on the already focused tile returns 'enter'.
-     * @param {TileId} tile @returns {'focus'|'enter'|'ignored'}
+     * Click on a tile, in reach or not. First click focuses; a click on the already focused tile returns 'enter'.
+     * @param {TileId} tile @returns {'focus'|'enter'}
      */
     click(tile) {
-        if (!this.reach().has(tile)) return 'ignored';
         if (tile === this._focusTile()) return 'enter';
         this._goTo(tile);
         return 'focus';

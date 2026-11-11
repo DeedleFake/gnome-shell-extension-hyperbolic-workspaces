@@ -1,6 +1,6 @@
 # Workspace move with modifier
 
-Holding the move modifier (Super by default) while dragging a tile carries that workspace to another tile. A drop on an occupied tile inserts by drag direction. The group stays connected: the largest piece stays put, and smaller pieces slide over to touch it. You cannot drag the workspace you are on, but it can slide when its piece is the smaller one. A plain drag of a window preview onto another tile moves that window.
+Holding the move modifier (Super by default) while dragging a tile carries that workspace to another tile. A drop on an occupied tile inserts by drag direction. The group stays connected: the largest piece stays put, and smaller pieces slide over to touch it. The workspace you are on moves like any other, and the focus stays on it. A plain drag of a window preview onto another tile moves that window.
 
 ## Sub-features
 
@@ -30,5 +30,5 @@ Preconditions:
 
 - Keep the modifier down for the whole drag. `hw drag` holds it from press to release.
 - A drop outside the disk cancels the carry, and `probe-plane` stays unchanged.
-- The active workspace refuses a drag. It can still change tiles when the group reconnects, so compare titles, not its tile id.
+- Any workspace, the active one included, can change tiles when the group reconnects, so compare titles, not tile ids. `scripts/prove-picks-and-reach.sh` moves the active workspace and checks that the group stays connected.
 - `move-modifier` changes through GSettings or the preferences row (see [preferences page](./preferences.md)).

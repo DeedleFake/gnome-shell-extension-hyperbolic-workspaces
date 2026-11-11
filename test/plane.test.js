@@ -211,7 +211,7 @@ test('property (port of sim.js, 3000 seeded steps): one piece, rigid slides on o
     assert.ok(multi > 10 && slides > 50 && drops > 200 && removals > 200, `exercised multi-leg ${multi}, slides ${slides}, drops ${drops}, removals ${removals}`);
 });
 
-test('planDrag preview equals commit; cancel leaves seats untouched; refused for the active key', () => {
+test('planDrag preview equals commit; cancel leaves seats untouched', () => {
     const {plane, view, wm} = setup();
     fill(plane, view, wm, 5);
     const seats = () => plane.seated().map(k => [k.name, plane.seatOf(k)]);
@@ -226,10 +226,32 @@ test('planDrag preview equals commit; cancel leaves seats untouched; refused for
     const done = plan.commit();
     assert.deepEqual(done, plan.change);
     assert.equal(plane.seatOf(k).tile, target);
-    assert.equal(plane.planDrag(wm.active, from, target).change.motions.length, 0);
-    const again = seats();
-    assert.equal(plane.planDrag(wm.active, from, target).commit().motions.length, 0);
-    assert.deepEqual(seats(), again);
+});
+
+test('the active workspace moves like any other: onto a free tile, onto an occupied one, and cut off on its own', () => {
+    const {plane, view, wm} = setup();
+    fill(plane, view, wm, 5);
+    wm.activate(plane.seated().filter(k => k.w > 0)[2]);
+    drive(plane, view, wm);
+    const T = plane.tiling, a = wm.active;
+    view.focusKey(a);
+    const occ = () => new Set(plane.seated().map(x => plane.seatOf(x).tile));
+    const free = [...T.rings(plane.seatOf(a).tile, 2)].map(([t]) => t).find(t => !occ().has(t) && T.neighbors(t).some(n => occ().has(n) && plane.at(n) !== a));
+    const plan = plane.planDrag(a, free, T.neighbors(free).find(n => occ().has(n)));
+    assert.ok(plan.change.motions.some(m => m.key === a), 'a preview of the active workspace moves it');
+    view.absorb(plan.commit());
+    assert.equal(plane.seatOf(a).tile, free, 'the active workspace lands on the free tile');
+    checkGroup(plane, wm);
+    const target = plane.seatOf(plane.seated().find(k => k !== a)).tile;
+    view.absorb(plane.planDrag(a, target, T.neighbors(target).find(t => !occ().has(t)) ?? T.neighbors(target)[0]).commit());
+    assert.equal(plane.seatOf(a).tile, target, 'a drop on an occupied tile inserts the active workspace there');
+    checkGroup(plane, wm);
+    const far = [...T.rings(plane.seatOf(a).tile, 3)].find(([t, d]) => d === 3 && !occ().has(t))[0];
+    view.absorb(plane.planDrag(a, far, T.neighbors(far)[0]).commit());
+    assert.ok(T.neighbors(plane.seatOf(a).tile).some(n => occ().has(n) && plane.at(n) !== a), 'cut off on its own, the active workspace slides back to touch the group');
+    checkGroup(plane, wm);
+    assert.equal(drive(plane, view, wm).motions.length, 0, 'the next sync keeps the moved active workspace where it is');
+    assert.equal(view.focus.kind === 'ws' && view.focus.key, a, 'the focus stays on the active workspace');
 });
 
 test('a stale plan recomputes against the current seats on commit', () => {

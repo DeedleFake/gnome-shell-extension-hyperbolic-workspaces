@@ -73,7 +73,7 @@ test('reach is the focused tile, its 4 edge neighbors and its 8 corner neighbors
     for (const n of plane.tiling.neighbors(f)) assert.ok(r.has(n));
 });
 
-test('click: first click focuses, a second enters, outside reach is ignored', () => {
+test('click: first click focuses, a second enters, outside reach the first click focuses too', () => {
     const {plane, view} = setup(3);
     const f = focusedTile(plane, view);
     const n = plane.tiling.neighbors(f)[0];
@@ -81,8 +81,10 @@ test('click: first click focuses, a second enters, outside reach is ignored', ()
     assert.equal(focusedTile(plane, view), n);
     assert.equal(view.click(n), 'enter');
     const far = [...plane.tiling.rings(n, 3)].find(([, d]) => d === 3)[0];
-    assert.equal(view.click(far), 'ignored');
-    assert.equal(focusedTile(plane, view), n);
+    assert.ok(!view.reach().has(far));
+    assert.equal(view.click(far), 'focus');
+    assert.equal(focusedTile(plane, view), far);
+    assert.equal(view.click(far), 'enter');
 });
 
 test('arrows move focus to the edge neighbor drawn in that direction and center it', () => {
